@@ -1,46 +1,24 @@
-class ClickDataHandler {
-  static generateJitter(baseDelay, entropySeed = 0.5) {
-    let x = Math.abs(Math.sin(entropySeed));
-    const r = 3.9;
-    return () => {
-      x = r * x * (1 - x);
-      const shift = (x - 0.5) * (baseDelay * 0.35);
-      return Math.max(10, Math.round(baseDelay + shift));
-    };
+class ChaoticJitter {
+  constructor(seed = 0.35, r = 3.91) {
+    this.x = seed;
+    this.r = r;
   }
 
-  static packCoordinates(coords) {
-    return coords
-      .map(({ x, y, delayMultiplier }) => {
-        const packed = ((x & 0x3FFF) << 18) | ((y & 0x3FFF) << 4) | (delayMultiplier & 0xF);
-        return packed.toString(36);
-      })
-      .join('-');
+  next() {
+    this.x = this.r * this.x * (1 - this.x);
+    return this.x;
   }
 
-  static unpackCoordinates(payload) {
-    if (!payload) return [];
-    return payload.split('-').map(part => {
-      const parsed = parseInt(part, 36);
-      return {
-        x: (parsed >> 18) & 0x3FFF,
-        y: (parsed >> 4) & 0x3FFF,
-        delayMultiplier: parsed & 0xF
-      };
-    });
-  }
-
-  static addMicroDrift(coords, driftFactor = 2) {
-    return coords.map(c => {
-      const dx = Math.random() > 0.5 ? Math.floor(Math.random() * driftFactor) : -Math.floor(Math.random() * driftFactor);
-      const dy = Math.random() > 0.5 ? Math.floor(Math.random() * driftFactor) : -Math.floor(Math.random() * driftFactor);
-      return {
-        x: c.x + dx,
-        y: c.y + dy,
-        delayMultiplier: c.delayMultiplier
-      };
-    });
+  generateIntervals(baseDelay, maxJitter, length) {
+    const sequence = [];
+    for (let i = 0; i < length; i++) {
+      const noise = this.next() - 0.5;
+      const fatigue = Math.sin(i * 0.15) * (maxJitter * 0.3);
+      const calculated = Math.round(baseDelay + (noise * maxJitter) + fatigue);
+      sequence.push(Math.max(1, calculated));
+    }
+    return sequence;
   }
 }
 
-module.exports = { ClickDataHandler };
+module.exports = { ChaoticJitter };
