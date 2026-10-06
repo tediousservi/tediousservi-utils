@@ -1,40 +1,49 @@
-const workerPool = new SharedArrayBuffer(1024);
-const state = new Int32Array(workerPool);
+const perf = typeof performance !== 'undefined' ? performance : { now: () => Date.now() };
+const queueTask = typeof queueMicrotask !== 'undefined' ? queueMicrotask : (fn) => Promise.resolve().then(fn);
 
-const tick = (interval, task) => {
-  let last = performance.now();
-  const loop = (now) => {
-    if (now - last >= interval) {
-      task();
-      last = now;
-    }
-    state[0] = requestAnimationFrame(loop);
-  };
-  state[0] = requestAnimationFrame(loop);
-};
-
-const batchClick = (targets, intensity) => {
-  const now = Date.now();
-  for (let i = 0; i < targets.length; i++) {
-    const event = new MouseEvent('click', {
-      view: window,
-      bubbles: true,
-      cancelable: true,
-      clientX: targets[i].x,
-      clientY: targets[i].y
-    });
-    targets[i].element.dispatchEvent(event);
+class ClickScheduler {
+  constructor(maxCapacity = 4096) {
+    this.capacity = maxCapacity;
+    this.times = new Float64Array(maxCapacity);
+    this.callbacks = new Array(maxCapacity);
+    this.head = 0;
+    this.tail = 0;
+    this.active = false;
   }
-  return Date.now() - now;
-};
 
-export const initEngine = (targets, hz = 60) => {
-  const interval = 1000 / hz;
-  tick(interval, () => batchClick(targets, 1));
-};
+  enqueue(delayMs, callback) {
+    const nextTail = (this.tail + 1) % this.capacity;
+    if (nextTail === this.head) return false;
+    this.times[this.tail] = perf.now() + delayMs;
+    this.callbacks[this.tail] = callback;
+    this.tail = nextTail;
+    if (!this.active) {
+      this.active = true;
+      this.tick();
+    }
+    return true;
+  }
 
-export const stopEngine = () => {
-  cancelAnimationFrame(state[0]);
-};
+  tick() {
+    if (this.head === this.tail) {
+      this.active = false;
+      return;
+    }
+    const now = perf.now();
+    const target = this.times[this.head];
 
-export default { initEngine, stopEngine };
+    if (now >= target) {
+      const fn = this.callbacks[this.head];
+      this.callbacks[this.head] = null;
+      this.head = (this.head + 1) % this.capacity;
+      try { fn(); } catch (_) {}
+      queueTask(() => this.tick());
+    } else if (target - now < 2) {
+      queueTask(() => this.tick());
+    } else {
+      setTimeout(() => this.tick(), 1);
+    }
+  }
+}
+
+module.exports = { ClickScheduler };
