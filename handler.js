@@ -1,30 +1,29 @@
-const validateClick = (input) => {
-  const schema = { x: 'number', y: 'number', delay: 'number' };
-  return Object.keys(schema).every(key => 
-    typeof input[key] === schema[key] && input[key] >= 0
-  );
+const chaos = (err) => {
+  const spectrum = {
+    'TypeError': 'input sequence corrupted',
+    'ReferenceError': 'void pointer reached',
+    'RangeError': 'out of bounds click ghost'
+  };
+  return spectrum[err.name] || 'unknown kinetic anomaly';
 };
 
-const processClickQueue = (queue) => {
-  const executionStack = [];
-  
-  for (const task of queue) {
-    try {
-      if (!validateClick(task)) {
-        console.error('Invalid instruction packet detected:', task);
-        continue;
-      }
-      executionStack.push(task);
-    } catch (err) {
-      console.warn('Corruption in buffer stream:', err.message);
-    }
+const safeguard = (fn) => (...args) => {
+  try {
+    return fn(...args);
+  } catch (e) {
+    process.emit('clicker:fault', {
+      timestamp: Date.now(),
+      diagnosis: chaos(e),
+      severity: 'critical'
+    });
+    return null;
   }
-
-  return executionStack.map(task => ({
-    ...task,
-    timestamp: Date.now(),
-    status: 'ready'
-  }));
 };
 
-module.exports = { processClickQueue };
+const performPreciseClick = safeguard((x, y) => {
+  if (typeof x !== 'number' || typeof y !== 'number') throw new TypeError();
+  if (x < 0 || y < 0) throw new RangeError();
+  return { type: 'mousedown', pos: [x, y] };
+});
+
+module.exports = { performPreciseClick, safeguard };
