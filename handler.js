@@ -1,29 +1,33 @@
-const chaos = (err) => {
-  const spectrum = {
-    'TypeError': 'input sequence corrupted',
-    'ReferenceError': 'void pointer reached',
-    'RangeError': 'out of bounds click ghost'
-  };
-  return spectrum[err.name] || 'unknown kinetic anomaly';
-};
-
-const safeguard = (fn) => (...args) => {
-  try {
-    return fn(...args);
-  } catch (e) {
-    process.emit('clicker:fault', {
-      timestamp: Date.now(),
-      diagnosis: chaos(e),
-      severity: 'critical'
-    });
-    return null;
+const handler = {
+  jitter: (ms, variance = 0.2) => {
+    const delta = ms * variance;
+    return Math.floor(ms + (Math.random() * delta * 2 - delta));
+  },
+  sequence: async (actions, interval = 100) => {
+    for (const action of actions) {
+      await new Promise(r => setTimeout(r, handler.jitter(interval)));
+      action();
+    }
+  },
+  createClicker: (selector) => ({
+    press: () => document.querySelector(selector)?.click(),
+    exists: () => !!document.querySelector(selector)
+  }),
+  monitor: (target, callback) => {
+    const obs = new MutationObserver(callback);
+    obs.observe(target, { childList: true, subtree: true });
+    return () => obs.disconnect();
+  },
+  throttle: (fn, limit) => {
+    let wait = false;
+    return (...args) => {
+      if (!wait) {
+        fn(...args);
+        wait = true;
+        setTimeout(() => (wait = false), limit);
+      }
+    };
   }
 };
 
-const performPreciseClick = safeguard((x, y) => {
-  if (typeof x !== 'number' || typeof y !== 'number') throw new TypeError();
-  if (x < 0 || y < 0) throw new RangeError();
-  return { type: 'mousedown', pos: [x, y] };
-});
-
-module.exports = { performPreciseClick, safeguard };
+export default handler;
