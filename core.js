@@ -1,24 +1,45 @@
-const validateInput = (input) => {
-  const bounds = { min: 10, max: 10000 };
-  const isNumeric = typeof input === 'number' && isFinite(input);
-  return isNumeric && input >= bounds.min && input <= bounds.max;
-};
+const buffer = new SharedArrayBuffer(8);
+const clickStats = new Float64Array(buffer);
 
-const processClickLoop = (queue) => {
-  const results = [];
-  for (let i = 0; i < queue.length; i++) {
-    const payload = queue[i];
-    try {
-      if (!validateInput(payload.interval)) {
-        throw new Error(`Invalid interval: ${payload.interval}`);
-      }
-      results.push({ ...payload, status: 'scheduled', timestamp: Date.now() });
-    } catch (e) {
-      console.error(`Skipping corrupt task ${i}: ${e.message}`);
-      results.push({ id: payload.id, status: 'discarded' });
-    }
+class ClickEngine {
+  constructor() {
+    this.interval = 10;
+    this.active = false;
   }
-  return results;
-};
 
-module.exports = { processClickLoop };
+  async burst(target, frequency) {
+    const slice = 1000 / frequency;
+    let last = performance.now();
+    this.active = true;
+
+    const loop = (now) => {
+      if (!this.active) return;
+      if (now - last >= slice) {
+        target.click();
+        clickStats[0]++;
+        last = now;
+      }
+      requestAnimationFrame(loop);
+    };
+
+    requestAnimationFrame(loop);
+  }
+
+  throttle(fn, limit) {
+    let inThrottle = false;
+    return (...args) => {
+      if (!inThrottle) {
+        fn(...args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    };
+  }
+
+  shutdown() {
+    this.active = false;
+    return clickStats[0];
+  }
+}
+
+module.exports = new ClickEngine();
