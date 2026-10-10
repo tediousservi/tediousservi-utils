@@ -1,45 +1,36 @@
-const buffer = new SharedArrayBuffer(8);
-const clickStats = new Float64Array(buffer);
+const validateInput = (input) => {
+  const schema = { rate: 'number', duration: 'number', enabled: 'boolean' };
+  return Object.keys(schema).every(key => 
+    typeof input[key] === schema[key] && input[key] !== null
+  );
+};
 
-class ClickEngine {
-  constructor() {
-    this.interval = 10;
-    this.active = false;
+const pulse = (ctx) => {
+  if (!validateInput(ctx.config)) {
+    console.error('[!] erratic config detected: halting execution');
+    return null;
   }
+  return setInterval(() => {
+    if (!ctx.config.enabled) return;
+    try {
+      executeClick(ctx.coords);
+    } catch (e) {
+      console.warn('ghost click incident:', e.message);
+    }
+  }, ctx.config.rate);
+};
 
-  async burst(target, frequency) {
-    const slice = 1000 / frequency;
-    let last = performance.now();
-    this.active = true;
+const executeClick = (pos) => {
+  const event = new MouseEvent('click', { clientX: pos.x, clientY: pos.y });
+  document.dispatchEvent(event);
+};
 
-    const loop = (now) => {
-      if (!this.active) return;
-      if (now - last >= slice) {
-        target.click();
-        clickStats[0]++;
-        last = now;
-      }
-      requestAnimationFrame(loop);
-    };
-
-    requestAnimationFrame(loop);
+export const initProcessor = (config, coords) => {
+  const ctx = { config, coords };
+  const loop = pulse(ctx);
+  
+  if (loop) {
+    setTimeout(() => clearInterval(loop), config.duration);
   }
-
-  throttle(fn, limit) {
-    let inThrottle = false;
-    return (...args) => {
-      if (!inThrottle) {
-        fn(...args);
-        inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
-      }
-    };
-  }
-
-  shutdown() {
-    this.active = false;
-    return clickStats[0];
-  }
-}
-
-module.exports = new ClickEngine();
+  return loop;
+};
