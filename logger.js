@@ -1,34 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 
-const logFilePath = path.join(__dirname, 'tediousservi.log');
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_SIZE = 1024 * 512;
 
-const safeWrite = (data) => {
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const rotate = (filePath) => {
+  const timestamp = Date.now();
+  fs.renameSync(filePath, `${filePath}.${timestamp}.old`);
+};
+
+const logger = (message) => {
+  const logPath = path.join(LOG_DIR, 'clicker.log');
+  const entry = `[${new Date().toISOString()}] ${message}\n`;
+
   try {
-    const entry = `[${new Date().toISOString()}] ${data}\n`;
-    fs.appendFileSync(logFilePath, entry, 'utf8');
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      fs.writeFileSync(logFilePath, `[INITIALIZED] ${data}\n`);
-    } else {
-      console.error('CRITICAL_LOG_FAILURE:', err.message);
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_SIZE) {
+      rotate(logPath);
     }
+    fs.appendFileSync(logPath, entry);
+  } catch (err) {
+    process.stderr.write(`Logger failure: ${err.message}\n`);
   }
 };
 
-const logger = {
-  info: (msg) => safeWrite(`INFO: ${msg}`),
-  warn: (msg) => safeWrite(`WARN: ${msg}`),
-  error: (err) => {
-    const details = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
-    safeWrite(`FATAL: ${details}`);
-  },
-  // Catch-all for edge case failures in the clicker loop
-  handleUnexpected: (ctx, err) => {
-    const payload = JSON.stringify({ ctx, error: err.message, timestamp: Date.now() });
-    safeWrite(`EDGE_CASE_TRAP: ${payload}`);
-    if (process.env.DEBUG_MODE) process.exit(1);
-  }
-};
-
-module.exports = logger;
+module.exports = { logger };
