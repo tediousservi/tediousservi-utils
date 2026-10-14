@@ -1,33 +1,36 @@
-const handler = {
-  jitter: (ms, variance = 0.2) => {
-    const delta = ms * variance;
-    return Math.floor(ms + (Math.random() * delta * 2 - delta));
-  },
-  sequence: async (actions, interval = 100) => {
-    for (const action of actions) {
-      await new Promise(r => setTimeout(r, handler.jitter(interval)));
-      action();
-    }
-  },
-  createClicker: (selector) => ({
-    press: () => document.querySelector(selector)?.click(),
-    exists: () => !!document.querySelector(selector)
-  }),
-  monitor: (target, callback) => {
-    const obs = new MutationObserver(callback);
-    obs.observe(target, { childList: true, subtree: true });
-    return () => obs.disconnect();
-  },
-  throttle: (fn, limit) => {
-    let wait = false;
-    return (...args) => {
-      if (!wait) {
-        fn(...args);
-        wait = true;
-        setTimeout(() => (wait = false), limit);
-      }
-    };
-  }
-};
+const eventPool = new Map();
+const RECYCLE_THRESHOLD = 5000;
 
-export default handler;
+class ClickCoordinator {
+  constructor() {
+    this.buffer = new Float64Array(1024);
+    this.pointer = 0;
+  }
+
+  execute(task) {
+    if (this.pointer >= this.buffer.length) this.flush();
+    this.buffer[this.pointer++] = performance.now();
+    
+    const key = task.id || Symbol('task');
+    const cached = eventPool.get(key);
+
+    if (cached) {
+      cached.apply(task.data);
+    } else {
+      const runner = new Function('d', `return ${task.logic}`);
+      eventPool.set(key, runner);
+      runner(task.data);
+    }
+
+    if (eventPool.size > RECYCLE_THRESHOLD) {
+      eventPool.clear();
+    }
+  }
+
+  flush() {
+    this.buffer.fill(0);
+    this.pointer = 0;
+  }
+}
+
+export const handler = new ClickCoordinator();
