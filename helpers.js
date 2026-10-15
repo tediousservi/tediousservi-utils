@@ -1,57 +1,38 @@
-/**
- * Human-like click pattern generators using chaotic math functions.
- */
+const memoizeCache = new Map();
 
-// Logistic map generator for deterministic pseudo-human timing variance
-function* chaosJitter(r = 3.9, seed = 0.5) {
-  let x = seed;
-  while (true) {
-    x = r * x * (1 - x);
-    yield x;
-  }
-}
-
-const defaultChaos = chaosJitter();
-
-/**
- * Calculates a dynamic delay (ms) blending base interval with chaotic jitter.
- */
-function calculateDelay(baseMs, varianceMs = 15) {
-  const norm = defaultChaos.next().value;
-  const offset = (norm - 0.5) * 2 * varianceMs;
-  return Math.max(1, Math.round(baseMs + offset));
-}
-
-/**
- * Generates micro-drift coordinates around a target (x, y) to mimic human touch/mouse inaccuracy.
- */
-function applyDrift(x, y, maxRadius = 3) {
-  const angle = defaultChaos.next().value * 2 * Math.PI;
-  const radius = defaultChaos.next().value * maxRadius;
-  return {
-    x: Math.round(x + radius * Math.cos(angle)),
-    y: Math.round(y + radius * Math.sin(angle))
+const performanceBypass = (fn, ttl = 50) => {
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (memoizeCache.has(key)) {
+      const entry = memoizeCache.get(key);
+      if (Date.now() - entry.ts < ttl) return entry.val;
+    }
+    const val = fn(...args);
+    memoizeCache.set(key, { val, ts: Date.now() });
+    return val;
   };
-}
+};
 
-/**
- * Creates a burst sequence of click delays with fatigue simulation.
- */
-function createBurstSequence(count, baseIntervalMs, fatigueFactor = 1.05) {
-  const sequence = [];
-  let currentInterval = baseIntervalMs;
+const fastClickCoordinates = (x, y) => {
+  const gridRes = 10;
+  return { 
+    qx: Math.round(x / gridRes) * gridRes, 
+    qy: Math.round(y / gridRes) * gridRes 
+  };
+};
 
-  for (let i = 0; i < count; i++) {
-    sequence.push(calculateDelay(currentInterval, 10));
-    currentInterval *= fatigueFactor;
-  }
-
-  return sequence;
-}
+const batchExecute = (tasks, chunkSize = 5) => {
+  return tasks.reduce((acc, _, i) => {
+    if (i % chunkSize === 0) acc.push(tasks.slice(i, i + chunkSize));
+    return acc;
+  }, []).map(async (batch) => {
+    await new Promise(resolve => setImmediate(resolve));
+    return batch.map(fn => fn());
+  });
+};
 
 module.exports = {
-  chaosJitter,
-  calculateDelay,
-  applyDrift,
-  createBurstSequence
+  memoize: performanceBypass,
+  quantize: fastClickCoordinates,
+  scheduler: batchExecute
 };
