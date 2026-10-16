@@ -1,36 +1,29 @@
-const eventPool = new Map();
-const RECYCLE_THRESHOLD = 5000;
+const validateInput = (input) => {
+  const schema = { clicks: 'number', delay: 'number', duration: 'number' };
+  return Object.keys(schema).every(key => 
+    typeof input[key] === schema[key] && input[key] >= 0
+  );
+};
 
-class ClickCoordinator {
-  constructor() {
-    this.buffer = new Float64Array(1024);
-    this.pointer = 0;
+const executeClickRoutine = (config, clicker) => {
+  if (!validateInput(config)) {
+    throw new Error('invalid config schema detected');
   }
 
-  execute(task) {
-    if (this.pointer >= this.buffer.length) this.flush();
-    this.buffer[this.pointer++] = performance.now();
-    
-    const key = task.id || Symbol('task');
-    const cached = eventPool.get(key);
-
-    if (cached) {
-      cached.apply(task.data);
-    } else {
-      const runner = new Function('d', `return ${task.logic}`);
-      eventPool.set(key, runner);
-      runner(task.data);
+  let elapsed = 0;
+  const intervalId = setInterval(() => {
+    try {
+      if (elapsed >= config.duration) {
+        clearInterval(intervalId);
+        return;
+      }
+      clicker.fire(config.clicks);
+      elapsed += config.delay;
+    } catch (err) {
+      clearInterval(intervalId);
+      console.error('routine disruption', err.message);
     }
+  }, config.delay);
+};
 
-    if (eventPool.size > RECYCLE_THRESHOLD) {
-      eventPool.clear();
-    }
-  }
-
-  flush() {
-    this.buffer.fill(0);
-    this.pointer = 0;
-  }
-}
-
-export const handler = new ClickCoordinator();
+module.exports = { executeClickRoutine };
