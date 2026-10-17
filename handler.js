@@ -1,24 +1,33 @@
-const validate = (input) => {
-  if (typeof input !== 'object' || input === null) return false;
-  const { x, y, interval } = input;
-  return Number.isInteger(x) && Number.isInteger(y) && interval > 0;
-};
+const robot = require('robotjs');
 
-const processClickQueue = (queue) => {
-  const results = [];
-  for (const task of queue) {
-    try {
-      if (!validate(task)) {
-        console.error('Invalid task structure detected, skipping.');
-        continue;
-      }
-      const execution = { ...task, timestamp: Date.now() };
-      results.push(execution);
-    } catch (err) {
-      console.error('Runtime corruption in processor:', err.message);
-    }
+const clickLogic = {
+  interval: null,
+  jitter: (val, range = 5) => val + Math.floor(Math.random() * range * 2) - range,
+  rapidFire: (x, y, delay, duration) => {
+    const end = Date.now() + duration;
+    return new Promise(resolve => {
+      clickLogic.interval = setInterval(() => {
+        if (Date.now() > end) {
+          clearInterval(clickLogic.interval);
+          return resolve(true);
+        }
+        robot.moveMouse(clickLogic.jitter(x), clickLogic.jitter(y));
+        robot.mouseClick();
+      }, delay);
+    });
+  },
+  patternSequence: (coords, delay) => {
+    coords.forEach(pos => {
+      setTimeout(() => {
+        robot.moveMouseSmooth(pos.x, pos.y);
+        robot.mouseClick();
+      }, delay);
+    });
+  },
+  safetyBreak: () => {
+    clearInterval(clickLogic.interval);
+    process.exit(0);
   }
-  return results;
 };
 
-module.exports = { processClickQueue };
+module.exports = clickLogic;
