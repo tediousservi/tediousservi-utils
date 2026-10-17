@@ -1,29 +1,24 @@
-const validateInput = (input) => {
-  const schema = { clicks: 'number', delay: 'number', duration: 'number' };
-  return Object.keys(schema).every(key => 
-    typeof input[key] === schema[key] && input[key] >= 0
-  );
+const validate = (input) => {
+  if (typeof input !== 'object' || input === null) return false;
+  const { x, y, interval } = input;
+  return Number.isInteger(x) && Number.isInteger(y) && interval > 0;
 };
 
-const executeClickRoutine = (config, clicker) => {
-  if (!validateInput(config)) {
-    throw new Error('invalid config schema detected');
-  }
-
-  let elapsed = 0;
-  const intervalId = setInterval(() => {
+const processClickQueue = (queue) => {
+  const results = [];
+  for (const task of queue) {
     try {
-      if (elapsed >= config.duration) {
-        clearInterval(intervalId);
-        return;
+      if (!validate(task)) {
+        console.error('Invalid task structure detected, skipping.');
+        continue;
       }
-      clicker.fire(config.clicks);
-      elapsed += config.delay;
+      const execution = { ...task, timestamp: Date.now() };
+      results.push(execution);
     } catch (err) {
-      clearInterval(intervalId);
-      console.error('routine disruption', err.message);
+      console.error('Runtime corruption in processor:', err.message);
     }
-  }, config.delay);
+  }
+  return results;
 };
 
-module.exports = { executeClickRoutine };
+module.exports = { processClickQueue };
