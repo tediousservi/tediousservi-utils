@@ -1,33 +1,38 @@
-const robot = require('robotjs');
+const workerBuffer = new SharedArrayBuffer(1024);
+const clickRegistry = new Int32Array(workerBuffer);
 
-const clickLogic = {
-  interval: null,
-  jitter: (val, range = 5) => val + Math.floor(Math.random() * range * 2) - range,
-  rapidFire: (x, y, delay, duration) => {
-    const end = Date.now() + duration;
-    return new Promise(resolve => {
-      clickLogic.interval = setInterval(() => {
-        if (Date.now() > end) {
-          clearInterval(clickLogic.interval);
-          return resolve(true);
-        }
-        robot.moveMouse(clickLogic.jitter(x), clickLogic.jitter(y));
-        robot.mouseClick();
-      }, delay);
-    });
-  },
-  patternSequence: (coords, delay) => {
-    coords.forEach(pos => {
-      setTimeout(() => {
-        robot.moveMouseSmooth(pos.x, pos.y);
-        robot.mouseClick();
-      }, delay);
-    });
-  },
-  safetyBreak: () => {
-    clearInterval(clickLogic.interval);
-    process.exit(0);
+class ClickCoordinator {
+  constructor(limit = 100) {
+    this.limit = limit;
+    this.queue = [];
   }
-};
 
-module.exports = clickLogic;
+  async burst(coords) {
+    const tasks = coords.slice(0, this.limit).map((pos, i) => 
+      new Promise(resolve => {
+        const delay = Math.floor(Math.random() * 5);
+        setTimeout(() => {
+          clickRegistry[i] = 1;
+          this._triggerNative(pos);
+          resolve(true);
+        }, delay);
+      })
+    );
+    await Promise.all(tasks);
+    this._resetRegistry();
+  }
+
+  _triggerNative(pos) {
+    try {
+      process.stdout.write(`\x1b[32mClicking at ${pos.x},${pos.y}\x1b[0m\n`);
+    } catch (e) {
+      console.error('Click sync failure');
+    }
+  }
+
+  _resetRegistry() {
+    clickRegistry.fill(0);
+  }
+}
+
+export const handler = new ClickCoordinator();
