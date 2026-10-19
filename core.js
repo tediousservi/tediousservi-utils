@@ -1,33 +1,57 @@
-const validate = (input) => {
-  const schema = { clicks: 'number', interval: 'number', target: 'string' };
-  return Object.keys(schema).every(k => typeof input[k] === schema[k]);
+const DEFAULT_CONFIG = Object.freeze({
+  minDelay: 10,
+  maxDelay: 5000,
+  maxClicksPerSec: 100
+});
+
+const ValidatorRegistry = {
+  [Symbol.for('valid.coord')]: (val) => Number.isFinite(val) && val >= 0 && val <= 65535,
+  [Symbol.for('valid.delay')]: (val) => Number.isInteger(val) && val >= DEFAULT_CONFIG.minDelay && val <= DEFAULT_CONFIG.maxDelay,
+  [Symbol.for('valid.button')]: (val) => [0, 1, 2].includes(val)
 };
 
-const runAutomation = async (queue) => {
-  console.log('tediousservi-utils: engine warming up...');
-  
-  for (const task of queue) {
-    try {
-      if (!validate(task)) {
-        throw new Error(`invalid payload structure: ${JSON.stringify(task)}`);
-      }
+class AutoclickTaskEngine {
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.metrics = { accepted: 0, rejected: 0 };
+  }
+
+  validateInputPayload(rawPayload) {
+    if (typeof rawPayload !== 'object' || rawPayload === null) {
+      return false;
+    }
+
+    const { x, y, delay, button = 0 } = rawPayload;
+    
+    const checks = [
+      ValidatorRegistry[Symbol.for('valid.coord')](x),
+      ValidatorRegistry[Symbol.for('valid.coord')](y),
+      ValidatorRegistry[Symbol.for('valid.delay')](delay),
+      ValidatorRegistry[Symbol.for('valid.button')](button)
+    ];
+
+    return checks.every(Boolean);
+  }
+
+  *runProcessingLoop(taskQueue) {
+    for (const task of taskQueue) {
+      const isValid = this.validateInputPayload(task);
       
-      const { clicks, interval, target } = task;
-      await new Promise(resolve => {
-        let count = 0;
-        const intervalId = setInterval(() => {
-          console.log(`clicking ${target} [${++count}/${clicks}]`);
-          if (count >= clicks) {
-            clearInterval(intervalId);
-            resolve();
-          }
-        }, interval);
+      if (!isValid) {
+        this.metrics.rejected += 1;
+        continue;
+      }
+
+      this.metrics.accepted += 1;
+      yield Object.freeze({
+        x: task.x | 0,
+        y: task.y | 0,
+        delay: task.delay,
+        button: task.button ?? 0,
+        checksum: (task.x ^ task.y ^ task.delay) >>> 0
       });
-    } catch (err) {
-      console.error(`skipping corrupted task: ${err.message}`);
-      continue;
     }
   }
-};
+}
 
-module.exports = { runAutomation };
+module.exports = { AutoclickTaskEngine };
