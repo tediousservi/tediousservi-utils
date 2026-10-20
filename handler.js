@@ -1,38 +1,30 @@
-const workerBuffer = new SharedArrayBuffer(1024);
-const clickRegistry = new Int32Array(workerBuffer);
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-class ClickCoordinator {
-  constructor(limit = 100) {
-    this.limit = limit;
-    this.queue = [];
-  }
-
-  async burst(coords) {
-    const tasks = coords.slice(0, this.limit).map((pos, i) => 
-      new Promise(resolve => {
-        const delay = Math.floor(Math.random() * 5);
-        setTimeout(() => {
-          clickRegistry[i] = 1;
-          this._triggerNative(pos);
-          resolve(true);
-        }, delay);
-      })
-    );
-    await Promise.all(tasks);
-    this._resetRegistry();
-  }
-
-  _triggerNative(pos) {
+const retryOperation = async (fn, maxRetries = 3, backoff = 1000) => {
+  let attempt = 0;
+  while (attempt < maxRetries) {
     try {
-      process.stdout.write(`\x1b[32mClicking at ${pos.x},${pos.y}\x1b[0m\n`);
-    } catch (e) {
-      console.error('Click sync failure');
+      return await fn();
+    } catch (error) {
+      attempt++;
+      if (attempt >= maxRetries) throw error;
+      const wait = backoff * Math.pow(2, attempt - 1);
+      await delay(wait);
     }
   }
+};
 
-  _resetRegistry() {
-    clickRegistry.fill(0);
-  }
-}
+const executeNetworkTask = async (taskFn, taskName = 'unknown') => {
+  console.log(`[tediousservi-utils] firing task: ${taskName}`);
+  return await retryOperation(taskFn)
+    .then((result) => {
+      console.log(`[tediousservi-utils] success: ${taskName}`);
+      return result;
+    })
+    .catch((err) => {
+      console.error(`[tediousservi-utils] fatal failure in ${taskName}:`, err.message);
+      throw err;
+    });
+};
 
-export const handler = new ClickCoordinator();
+module.exports = { executeNetworkTask };
