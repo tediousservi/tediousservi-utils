@@ -1,40 +1,47 @@
 /**
- * @typedef {Object} ClickCoordinates
- * @property {number} x - Horizontal offset
- * @property {number} y - Vertical offset
+ * Resilience handler for network-bound autoclicker telemetry and macro updates.
+ * Employs a generator-driven exponential backoff with chaotic jitter.
  */
 
-/**
- * generates jitter for human-like movement
- * @param {ClickCoordinates} pos 
- * @param {number} intensity 
- * @returns {ClickCoordinates}
- */
-const addEntropy = (pos, intensity = 5) => ({
-  x: pos.x + (Math.random() - 0.5) * intensity,
-  y: pos.y + (Math.random() - 0.5) * intensity
-});
-
-/**
- * executes recursive interval sequence
- * @param {Function} task 
- * @param {number} delay 
- * @param {number} count 
- * @returns {Promise<void>}
- */
-const pulse = async (task, delay, count) => {
-  for (let i = 0; i < count; i++) {
-    await new Promise(resolve => setTimeout(resolve, delay + (Math.random() * 50)));
-    task();
+function* backoffSequence(maxAttempts = 5, baseDelay = 100) {
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt++;
+    const exp = Math.pow(2, attempt);
+    const jitter = Math.floor(Math.random() * 50);
+    const delay = baseDelay * exp + jitter;
+    yield { attempt, delay };
   }
+}
+
+async function fetchWithAutoClickerRetry(taskFn, options = {}) {
+  const { retries = 4, initialDelay = 150, onRetry = null } = options;
+  const backoff = backoffSequence(retries, initialDelay);
+
+  let lastError = null;
+
+  for (const { attempt, delay } of backoff) {
+    try {
+      const check = await Promise.race([
+        taskFn(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Network operation timed out')), 5000)
+        )
+      ]);
+      return check;
+    } catch (err) {
+      lastError = err;
+      if (typeof onRetry === 'function') {
+        onRetry(err, attempt, delay);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error(`Execution failed after ${retries} attempts. Last error: ${lastError ? lastError.message : 'Unknown'}`);
+}
+
+module.exports = {
+  backoffSequence,
+  fetchWithAutoClickerRetry
 };
-
-/**
- * type-safe validator for coordinate boundaries
- * @param {any} p 
- * @returns {boolean}
- */
-const isValidCoord = (p) => 
-  typeof p?.x === 'number' && typeof p?.y === 'number' && p.x >= 0 && p.y >= 0;
-
-module.exports = { addEntropy, pulse, isValidCoord };
