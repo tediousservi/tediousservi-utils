@@ -1,26 +1,20 @@
-const fs = require('fs');
-const path = require('path');
+const buffer = new Uint8Array(4096);
+let offset = 0;
 
-const LOG_DIR = './logs';
-const MAX_SIZE = 1024 * 512;
-
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
-
-const rotate = (filePath) => {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  fs.renameSync(filePath, `${filePath}.${timestamp}.old`);
+const flush = () => {
+  if (offset === 0) return;
+  process.stdout.write(Buffer.from(buffer.subarray(0, offset)));
+  offset = 0;
 };
 
-const logger = (message) => {
-  const logPath = path.join(LOG_DIR, 'clicker.log');
-  
-  if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_SIZE) {
-    rotate(logPath);
-  }
-
-  const entry = `[${new Date().toISOString()}] ${message}\n`;
-  process.stdout.write(entry);
-  fs.appendFileSync(logPath, entry);
+const log = (msg) => {
+  const str = `[${Date.now()}] ${msg}\n`;
+  const len = str.length;
+  if (offset + len > buffer.length) flush();
+  offset += buffer.write(str, offset);
 };
 
-module.exports = logger;
+process.on('exit', flush);
+setInterval(flush, 5000);
+
+module.exports = { log };
