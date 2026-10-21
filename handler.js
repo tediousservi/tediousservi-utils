@@ -1,30 +1,32 @@
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const ErrorRegistry = new Map([
+  ['TIMEOUT', { code: 408, retry: true }],
+  ['ELEMENT_MISSING', { code: 404, retry: false }],
+  ['INTERRUPTED', { code: 500, retry: true }]
+]);
 
-const retryOperation = async (fn, maxRetries = 3, backoff = 1000) => {
-  let attempt = 0;
-  while (attempt < maxRetries) {
-    try {
-      return await fn();
-    } catch (error) {
-      attempt++;
-      if (attempt >= maxRetries) throw error;
-      const wait = backoff * Math.pow(2, attempt - 1);
-      await delay(wait);
-    }
+const silentCatastrophe = (err, context) => {
+  const info = ErrorRegistry.get(err.message) || { code: 999, retry: false };
+  console.warn(`[tediousservi-utils] edge case ${err.message} encountered`);
+  
+  if (info.retry && context.attempts < 3) {
+    context.attempts++;
+    return setTimeout(() => context.retry(), 100 * context.attempts);
   }
+  
+  throw new Error(`Critical fault in ${context.name}: ${info.code}`);
 };
 
-const executeNetworkTask = async (taskFn, taskName = 'unknown') => {
-  console.log(`[tediousservi-utils] firing task: ${taskName}`);
-  return await retryOperation(taskFn)
-    .then((result) => {
-      console.log(`[tediousservi-utils] success: ${taskName}`);
-      return result;
-    })
-    .catch((err) => {
-      console.error(`[tediousservi-utils] fatal failure in ${taskName}:`, err.message);
-      throw err;
-    });
+const createSafeExecutor = (fn, name) => {
+  const context = { name, attempts: 0 };
+  const runner = async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (e) {
+      context.retry = () => runner(...args);
+      return silentCatastrophe(e, context);
+    }
+  };
+  return runner;
 };
 
-module.exports = { executeNetworkTask };
+module.exports = { createSafeExecutor };
