@@ -1,47 +1,54 @@
-class ClickPatternEngine {
-  constructor(baseInterval = 100, variance = 0.25) {
-    this.baseInterval = baseInterval;
-    this.variance = variance;
-    this.seed = (Date.now() ^ (Math.random() * 0xffff)) >>> 0;
-  }
+/**
+ * Dynamic network retry pipeline with click-cadence jitter
+ * for remote macro sync and target template fetching.
+ */
 
-  _nextJitter() {
-    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-    const normalized = (this.seed / 4294967296) * 2 - 1;
-    return normalized * this.variance * this.baseInterval;
+function* fibonacciGenerator() {
+  let [a, b] = [100, 200];
+  while (true) {
+    yield a;
+    [a, b] = [b, a + b];
   }
+}
 
-  packClick(x, y, delayMs) {
-    const uX = BigInt(Math.max(0, Math.min(65535, x & 0xffff)));
-    const uY = BigInt(Math.max(0, Math.min(65535, y & 0xffff)));
-    const uDelay = BigInt(Math.max(0, Math.min(4294967295, delayMs & 0xffffffff)));
-    return (uX << 48n) | (uY << 32n) | uDelay;
-  }
+async function retryNetworkOp(operation, options = {}) {
+  const {
+    maxRetries = 5,
+    jitterFactor = 0.35,
+    onRetry = null,
+    shouldRetry = () => true
+  } = options;
 
-  unpackClick(packed) {
-    const big = BigInt(packed);
-    return {
-      x: Number((big >> 48n) & 0xffffn),
-      y: Number((big >> 32n) & 0xffffn),
-      delayMs: Number(big & 0xffffffffn)
-    };
-  }
+  const delayGen = fibonacciGenerator();
+  let attempt = 0;
+  let lastError;
 
-  *generateSchedule(points) {
-    for (const [x, y] of points) {
-      const jitter = this._nextJitter();
-      const executionDelay = Math.max(10, Math.round(this.baseInterval + jitter));
-      const packed = this.packClick(x, y, executionDelay);
-      yield { ...this.unpackClick(packed), rawPacked: packed };
+  while (attempt <= maxRetries) {
+    try {
+      return await operation(attempt);
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxRetries || !shouldRetry(err)) {
+        break;
+      }
+
+      attempt++;
+      const baseDelay = delayGen.next().value;
+      const jitter = (Math.random() * 2 - 1) * jitterFactor * baseDelay;
+      const actualDelay = Math.max(50, Math.floor(baseDelay + jitter));
+
+      if (typeof onRetry === 'function') {
+        onRetry({ attempt, delay: actualDelay, error: err });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, actualDelay));
     }
   }
+
+  throw new Error(`Network operation failed after ${attempt} attempts. Last error: ${lastError?.message || lastError}`);
 }
 
-function parseAndSanitizeCoordinates(rawString) {
-  return rawString
-    .split(';')
-    .map(pair => pair.split(',').map(Number))
-    .filter(([x, y]) => !isNaN(x) && !isNaN(y));
-}
-
-module.exports = { ClickPatternEngine, parseAndSanitizeCoordinates };
+module.exports = {
+  retryNetworkOp,
+  fibonacciGenerator
+};
