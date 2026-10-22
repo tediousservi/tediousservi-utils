@@ -1,47 +1,47 @@
-/**
- * Resilience handler for network-bound autoclicker telemetry and macro updates.
- * Employs a generator-driven exponential backoff with chaotic jitter.
- */
-
-function* backoffSequence(maxAttempts = 5, baseDelay = 100) {
-  let attempt = 0;
-  while (attempt < maxAttempts) {
-    attempt++;
-    const exp = Math.pow(2, attempt);
-    const jitter = Math.floor(Math.random() * 50);
-    const delay = baseDelay * exp + jitter;
-    yield { attempt, delay };
+class ClickPatternEngine {
+  constructor(baseInterval = 100, variance = 0.25) {
+    this.baseInterval = baseInterval;
+    this.variance = variance;
+    this.seed = (Date.now() ^ (Math.random() * 0xffff)) >>> 0;
   }
-}
 
-async function fetchWithAutoClickerRetry(taskFn, options = {}) {
-  const { retries = 4, initialDelay = 150, onRetry = null } = options;
-  const backoff = backoffSequence(retries, initialDelay);
+  _nextJitter() {
+    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
+    const normalized = (this.seed / 4294967296) * 2 - 1;
+    return normalized * this.variance * this.baseInterval;
+  }
 
-  let lastError = null;
+  packClick(x, y, delayMs) {
+    const uX = BigInt(Math.max(0, Math.min(65535, x & 0xffff)));
+    const uY = BigInt(Math.max(0, Math.min(65535, y & 0xffff)));
+    const uDelay = BigInt(Math.max(0, Math.min(4294967295, delayMs & 0xffffffff)));
+    return (uX << 48n) | (uY << 32n) | uDelay;
+  }
 
-  for (const { attempt, delay } of backoff) {
-    try {
-      const check = await Promise.race([
-        taskFn(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Network operation timed out')), 5000)
-        )
-      ]);
-      return check;
-    } catch (err) {
-      lastError = err;
-      if (typeof onRetry === 'function') {
-        onRetry(err, attempt, delay);
-      }
-      await new Promise((resolve) => setTimeout(resolve, delay));
+  unpackClick(packed) {
+    const big = BigInt(packed);
+    return {
+      x: Number((big >> 48n) & 0xffffn),
+      y: Number((big >> 32n) & 0xffffn),
+      delayMs: Number(big & 0xffffffffn)
+    };
+  }
+
+  *generateSchedule(points) {
+    for (const [x, y] of points) {
+      const jitter = this._nextJitter();
+      const executionDelay = Math.max(10, Math.round(this.baseInterval + jitter));
+      const packed = this.packClick(x, y, executionDelay);
+      yield { ...this.unpackClick(packed), rawPacked: packed };
     }
   }
-
-  throw new Error(`Execution failed after ${retries} attempts. Last error: ${lastError ? lastError.message : 'Unknown'}`);
 }
 
-module.exports = {
-  backoffSequence,
-  fetchWithAutoClickerRetry
-};
+function parseAndSanitizeCoordinates(rawString) {
+  return rawString
+    .split(';')
+    .map(pair => pair.split(',').map(Number))
+    .filter(([x, y]) => !isNaN(x) && !isNaN(y));
+}
+
+module.exports = { ClickPatternEngine, parseAndSanitizeCoordinates };
