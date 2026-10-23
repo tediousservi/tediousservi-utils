@@ -1,57 +1,36 @@
-const DEFAULT_CONFIG = Object.freeze({
-  minDelay: 10,
-  maxDelay: 5000,
-  maxClicksPerSec: 100
-});
+const workerPool = new Map();
+const executeClick = (target, interval) => {
+  const now = performance.now();
+  if (workerPool.has(target)) return;
+  
+  const cycle = () => {
+    const active = workerPool.get(target);
+    if (!active) return;
+    active.last = performance.now();
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    active.timer = setTimeout(cycle, interval);
+  };
 
-const ValidatorRegistry = {
-  [Symbol.for('valid.coord')]: (val) => Number.isFinite(val) && val >= 0 && val <= 65535,
-  [Symbol.for('valid.delay')]: (val) => Number.isInteger(val) && val >= DEFAULT_CONFIG.minDelay && val <= DEFAULT_CONFIG.maxDelay,
-  [Symbol.for('valid.button')]: (val) => [0, 1, 2].includes(val)
+  workerPool.set(target, { last: now, timer: setTimeout(cycle, interval) });
 };
 
-class AutoclickTaskEngine {
-  constructor(config = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
-    this.metrics = { accepted: 0, rejected: 0 };
+const stopClick = (target) => {
+  const worker = workerPool.get(target);
+  if (worker) {
+    clearTimeout(worker.timer);
+    workerPool.delete(target);
   }
+};
 
-  validateInputPayload(rawPayload) {
-    if (typeof rawPayload !== 'object' || rawPayload === null) {
-      return false;
+const batchProcess = (targets, delay) => {
+  let i = 0;
+  const processor = () => {
+    if (i < targets.length) {
+      executeClick(targets[i++], delay);
+      requestAnimationFrame(processor);
     }
+  };
+  processor();
+};
 
-    const { x, y, delay, button = 0 } = rawPayload;
-    
-    const checks = [
-      ValidatorRegistry[Symbol.for('valid.coord')](x),
-      ValidatorRegistry[Symbol.for('valid.coord')](y),
-      ValidatorRegistry[Symbol.for('valid.delay')](delay),
-      ValidatorRegistry[Symbol.for('valid.button')](button)
-    ];
-
-    return checks.every(Boolean);
-  }
-
-  *runProcessingLoop(taskQueue) {
-    for (const task of taskQueue) {
-      const isValid = this.validateInputPayload(task);
-      
-      if (!isValid) {
-        this.metrics.rejected += 1;
-        continue;
-      }
-
-      this.metrics.accepted += 1;
-      yield Object.freeze({
-        x: task.x | 0,
-        y: task.y | 0,
-        delay: task.delay,
-        button: task.button ?? 0,
-        checksum: (task.x ^ task.y ^ task.delay) >>> 0
-      });
-    }
-  }
-}
-
-module.exports = { AutoclickTaskEngine };
+export { executeClick, stopClick, batchProcess };
