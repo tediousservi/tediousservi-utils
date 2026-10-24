@@ -1,32 +1,31 @@
-const ErrorRegistry = new Map([
-  ['TIMEOUT', { code: 408, retry: true }],
-  ['ELEMENT_MISSING', { code: 404, retry: false }],
-  ['INTERRUPTED', { code: 500, retry: true }]
-]);
-
-const silentCatastrophe = (err, context) => {
-  const info = ErrorRegistry.get(err.message) || { code: 999, retry: false };
-  console.warn(`[tediousservi-utils] edge case ${err.message} encountered`);
-  
-  if (info.retry && context.attempts < 3) {
-    context.attempts++;
-    return setTimeout(() => context.retry(), 100 * context.attempts);
-  }
-  
-  throw new Error(`Critical fault in ${context.name}: ${info.code}`);
+const validateClickSequence = (coords) => {
+  const isValid = Array.isArray(coords) && coords.every(c => 
+    typeof c.x === 'number' && 
+    typeof c.y === 'number' && 
+    c.x >= 0 && c.y >= 0
+  );
+  if (!isValid) throw new Error('invalid sequence geometry detected');
+  return true;
 };
 
-const createSafeExecutor = (fn, name) => {
-  const context = { name, attempts: 0 };
-  const runner = async (...args) => {
+const processClickLoop = (queue, executionFn) => {
+  let tick = 0;
+  return async () => {
     try {
-      return await fn(...args);
-    } catch (e) {
-      context.retry = () => runner(...args);
-      return silentCatastrophe(e, context);
+      const batch = queue.splice(0, 10);
+      if (batch.length === 0) return;
+      
+      validateClickSequence(batch);
+      
+      for (const step of batch) {
+        await executionFn(step);
+        tick++;
+      }
+    } catch (err) {
+      console.error(`sequence disruption at tick ${tick}:`, err.message);
+      process.emit('SIGINT');
     }
   };
-  return runner;
 };
 
-module.exports = { createSafeExecutor };
+module.exports = { processClickLoop };
