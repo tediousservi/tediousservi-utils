@@ -1,36 +1,52 @@
-const workerPool = new Map();
-const executeClick = (target, interval) => {
-  const now = performance.now();
-  if (workerPool.has(target)) return;
-  
-  const cycle = () => {
-    const active = workerPool.get(target);
-    if (!active) return;
-    active.last = performance.now();
-    target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    active.timer = setTimeout(cycle, interval);
-  };
-
-  workerPool.set(target, { last: now, timer: setTimeout(cycle, interval) });
-};
-
-const stopClick = (target) => {
-  const worker = workerPool.get(target);
-  if (worker) {
-    clearTimeout(worker.timer);
-    workerPool.delete(target);
+class OptimizedClickEngine {
+  constructor(maxQueueSize = 1024) {
+    this.capacity = 1 << (32 - Math.clz32(maxQueueSize - 1));
+    this.mask = this.capacity - 1;
+    this.timestamps = new Float64Array(this.capacity);
+    this.head = 0;
+    this.tail = 0;
+    this.active = false;
+    this.rafId = null;
   }
-};
 
-const batchProcess = (targets, delay) => {
-  let i = 0;
-  const processor = () => {
-    if (i < targets.length) {
-      executeClick(targets[i++], delay);
-      requestAnimationFrame(processor);
-    }
-  };
-  processor();
-};
+  schedule(delayMs) {
+    const targetTime = performance.now() + delayMs;
+    const nextHead = (this.head + 1) & this.mask;
+    if (nextHead === this.tail) return false;
+    this.timestamps[this.head] = targetTime;
+    this.head = nextHead;
+    return true;
+  }
 
-export { executeClick, stopClick, batchProcess };
+  start(dispatchCallback) {
+    if (this.active) return;
+    this.active = true;
+
+    const tick = () => {
+      if (!this.active) return;
+      const now = performance.now();
+
+      while (this.tail !== this.head) {
+        if (this.timestamps[this.tail] <= now) {
+          dispatchCallback(now);
+          this.tail = (this.tail + 1) & this.mask;
+        } else {
+          break;
+        }
+      }
+
+      this.rafId = requestAnimationFrame(tick);
+    };
+
+    this.rafId = requestAnimationFrame(tick);
+  }
+
+  stop() {
+    this.active = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.head = 0;
+    this.tail = 0;
+  }
+}
+
+module.exports = { OptimizedClickEngine };
