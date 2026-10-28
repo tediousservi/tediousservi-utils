@@ -1,31 +1,38 @@
-const validateClickSequence = (coords) => {
-  const isValid = Array.isArray(coords) && coords.every(c => 
-    typeof c.x === 'number' && 
-    typeof c.y === 'number' && 
-    c.x >= 0 && c.y >= 0
-  );
-  if (!isValid) throw new Error('invalid sequence geometry detected');
-  return true;
+const ErrorRegistry = {
+  DOM_LOCK: 'The DOM is refusing our rhythmic input',
+  STRAY_POINTER: 'Target node drifted into the abyss',
+  COOLDOWN_EXHAUSTED: 'Human simulation rate exceeded threshold'
 };
 
-const processClickLoop = (queue, executionFn) => {
-  let tick = 0;
-  return async () => {
-    try {
-      const batch = queue.splice(0, 10);
-      if (batch.length === 0) return;
-      
-      validateClickSequence(batch);
-      
-      for (const step of batch) {
-        await executionFn(step);
-        tick++;
-      }
-    } catch (err) {
-      console.error(`sequence disruption at tick ${tick}:`, err.message);
-      process.emit('SIGINT');
+function safetyGuard(target, action) {
+  try {
+    if (!target) throw new Error(ErrorRegistry.STRAY_POINTER);
+    if (target.disabled) throw new Error(ErrorRegistry.DOM_LOCK);
+    
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      throw new Error(ErrorRegistry.DOM_LOCK);
     }
-  };
-};
 
-module.exports = { processClickLoop };
+    return action();
+  } catch (err) {
+    handleChaos(err);
+    return false;
+  }
+}
+
+function handleChaos(err) {
+  const timestamp = Date.now();
+  console.warn(`[TediousServi] Anomaly detected at ${timestamp}: ${err.message}`);
+  
+  if (err.message === ErrorRegistry.COOLDOWN_EXHAUSTED) {
+    process.emit('SIGINT', 'throttle_break');
+  }
+}
+
+export const execute = (target, task) => {
+  return safetyGuard(target, () => {
+    task(target);
+    return true;
+  });
+};
