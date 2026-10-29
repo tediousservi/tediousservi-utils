@@ -1,59 +1,59 @@
-/**
- * Configuration loader with Proxy-based default fallbacks and strict bounds checking.
- */
-const DEFAULT_CONFIG = Object.freeze({
-  cps: 15,
-  clickType: 'single',
-  targetButton: 'left',
-  jitterMs: 4,
-  hotkey: 'F8',
-  burstLimit: 100,
-  autoStopMs: 0,
-  soundFeedback: false,
+const DEFAULTS = Object.freeze({
+  minDelayMs: 40,
+  maxDelayMs: 120,
+  jitterStrength: 0.25,
+  maxBurstClicks: 100,
+  targetSelector: '.click-target',
+  antiDetection: true,
 });
 
-function loadConfig(userOverrides = {}) {
-  const merged = { ...DEFAULT_CONFIG };
+const createJitteredTiming = (min, max, strength) => {
+  const base = min + Math.random() * (max - min);
+  const variance = base * strength * (Math.random() - 0.5);
+  return Math.floor(Math.max(10, base + variance));
+};
 
-  Object.keys(userOverrides).forEach((key) => {
-    if (key in DEFAULT_CONFIG && userOverrides[key] !== undefined) {
-      const defaultType = typeof DEFAULT_CONFIG[key];
-      const val = userOverrides[key];
+class DynamicConfigStore {
+  #data = new Map(Object.entries(DEFAULTS));
 
-      if (defaultType === 'number') {
-        const parsed = Number(val);
-        merged[key] = Number.isNaN(parsed) ? DEFAULT_CONFIG[key] : Math.max(0, parsed);
-      } else if (defaultType === 'boolean') {
-        merged[key] = Boolean(val);
-      } else {
-        merged[key] = String(val);
+  constructor(initial = {}) {
+    this.update(initial);
+  }
+
+  update(patch) {
+    for (const [key, val] of Object.entries(patch)) {
+      if (val !== undefined && val !== null) {
+        this.#data.set(key, val);
       }
     }
-  });
+    return this;
+  }
 
-  return new Proxy(merged, {
-    get(target, prop) {
-      if (typeof prop === 'symbol') return Reflect.get(target, prop);
-      if (!(prop in target)) {
-        console.warn(`[tediousservi-utils] Accessing unknown config key: '${String(prop)}'`);
-        return undefined;
-      }
-      return target[prop];
-    },
-    set(target, prop, value) {
-      if (!(prop in DEFAULT_CONFIG)) {
-        throw new Error(`Cannot set unknown configuration key: '${String(prop)}'`);
-      }
-      if (prop === 'cps' && (typeof value !== 'number' || value <= 0 || value > 500)) {
-        throw new RangeError('CPS must be a positive number up to 500');
-      }
-      target[prop] = value;
-      return true;
-    }
-  });
+  get nextInterval() {
+    return createJitteredTiming(
+      this.#data.get('minDelayMs'),
+      this.#data.get('maxDelayMs'),
+      this.#data.get('jitterStrength')
+    );
+  }
+
+  toObject() {
+    return Object.fromEntries(this.#data.entries());
+  }
 }
 
-module.exports = {
-  DEFAULT_CONFIG,
-  loadConfig,
-};
+const store = new DynamicConfigStore();
+
+export const config = new Proxy(store, {
+  get(target, prop, receiver) {
+    if (Reflect.has(target, prop)) {
+      return Reflect.get(target, prop, receiver);
+    }
+    const state = target.toObject();
+    return prop in state ? state[prop] : undefined;
+  },
+  set(target, prop, value) {
+    target.update({ [prop]: value });
+    return true;
+  }
+});
