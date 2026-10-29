@@ -1,54 +1,47 @@
 /**
- * Dynamic network retry pipeline with click-cadence jitter
- * for remote macro sync and target template fetching.
+ * @typedef {Object} ClickConfig
+ * @property {number} interval - Delay in ms
+ * @property {boolean} randomized - Jitter toggle
  */
 
-function* fibonacciGenerator() {
-  let [a, b] = [100, 200];
-  while (true) {
-    yield a;
-    [a, b] = [b, a + b];
-  }
+/**
+ * Orchestrates mouse event simulation with jitter
+ * @param {ClickConfig} config
+ * @returns {Promise<void>}
+ */
+async function triggerClick({ interval, randomized }) {
+  const jitter = randomized ? Math.random() * 100 : 0;
+  const delay = Math.max(0, interval + jitter);
+
+  await new Promise(resolve => setTimeout(resolve, delay));
+  
+  const event = new MouseEvent('click', {
+    view: window,
+    bubbles: true,
+    cancelable: true
+  });
+  document.dispatchEvent(event);
 }
 
-async function retryNetworkOp(operation, options = {}) {
-  const {
-    maxRetries = 5,
-    jitterFactor = 0.35,
-    onRetry = null,
-    shouldRetry = () => true
-  } = options;
-
-  const delayGen = fibonacciGenerator();
-  let attempt = 0;
-  let lastError;
-
-  while (attempt <= maxRetries) {
-    try {
-      return await operation(attempt);
-    } catch (err) {
-      lastError = err;
-      if (attempt === maxRetries || !shouldRetry(err)) {
-        break;
-      }
-
-      attempt++;
-      const baseDelay = delayGen.next().value;
-      const jitter = (Math.random() * 2 - 1) * jitterFactor * baseDelay;
-      const actualDelay = Math.max(50, Math.floor(baseDelay + jitter));
-
-      if (typeof onRetry === 'function') {
-        onRetry({ attempt, delay: actualDelay, error: err });
-      }
-
-      await new Promise(resolve => setTimeout(resolve, actualDelay));
-    }
-  }
-
-  throw new Error(`Network operation failed after ${attempt} attempts. Last error: ${lastError?.message || lastError}`);
-}
-
-module.exports = {
-  retryNetworkOp,
-  fibonacciGenerator
+/**
+ * Normalizes input frequency to safe execution bounds
+ * @param {number|string} input
+ * @returns {number}
+ */
+const normalizeRate = (input) => {
+  const sanitized = parseInt(input, 10);
+  return isNaN(sanitized) ? 1000 : Math.max(50, sanitized);
 };
+
+/**
+ * Batch executes interaction sequence for automated tasks
+ * @param {number} count
+ * @param {ClickConfig} config
+ */
+async function burstClick(count, config) {
+  for (let i = 0; i < count; i++) {
+    await triggerClick(config);
+  }
+}
+
+export { triggerClick, normalizeRate, burstClick };
