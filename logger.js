@@ -1,35 +1,56 @@
 const fs = require('fs');
 const path = require('path');
 
-const logPath = path.join(__dirname, 'clicker.log');
-const stream = fs.createWriteStream(logPath, { flags: 'a' });
-
-const format = (lvl, msg) => {
-  const ts = new Date().toISOString().replace(/T/, ' ').replace(/Z/, '');
-  return `[${ts}] [${lvl.toUpperCase()}]: ${msg}\n`;
-};
-
-const logger = {
-  info: (msg) => {
-    const line = format('info', msg);
-    process.stdout.write(line);
-    stream.write(line);
-  },
-  error: (msg) => {
-    const line = format('error', msg);
-    process.stderr.write(`\x1b[31m${line}\x1b[0m`);
-    stream.write(line);
-  },
-  debug: (msg) => {
-    if (process.env.DEBUG) {
-      stream.write(format('debug', msg));
-    }
-  },
-  cleanup: () => {
-    stream.end();
+function createRotatingLogger(logDir = './logs', maxBytes = 2048, maxBackups = 3) {
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
   }
-};
 
-process.on('exit', logger.cleanup);
+  const activeLogPath = path.join(logDir, 'clicker_events.log');
 
-module.exports = logger;
+  function shiftLogs() {
+    for (let i = maxBackups - 1; i >= 1; i--) {
+      const source = path.join(logDir, `clicker_events.${i}.log`);
+      const target = path.join(logDir, `clicker_events.${i + 1}.log`);
+      if (fs.existsSync(source)) {
+        if (i + 1 > maxBackups) {
+          fs.unlinkSync(source);
+        } else {
+          fs.renameSync(source, target);
+        }
+      }
+    }
+    if (fs.existsSync(activeLogPath)) {
+      fs.renameSync(activeLogPath, path.join(logDir, 'clicker_events.1.log'));
+    }
+  }
+
+  const rawLogger = {
+    write(level, eventName, payload = {}) {
+      const record = JSON.stringify({
+        t: Date.now(),
+        lvl: String(level).toUpperCase(),
+        evt: eventName,
+        data: payload
+      }) + '\n';
+
+      if (fs.existsSync(activeLogPath)) {
+        const { size } = fs.statSync(activeLogPath);
+        if (size + record.length > maxBytes) {
+          shiftLogs();
+        }
+      }
+
+      fs.appendFileSync(activeLogPath, record, 'utf8');
+    }
+  };
+
+  return new Proxy(rawLogger, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      return (eventName, payload) => target.write(prop, eventName, payload);
+    }
+  });
+}
+
+module.exports = { createRotatingLogger };
