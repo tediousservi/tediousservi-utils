@@ -1,47 +1,60 @@
-/**
- * @typedef {Object} ClickConfig
- * @property {number} interval - Delay in ms
- * @property {boolean} randomized - Jitter toggle
- */
-
-/**
- * Orchestrates mouse event simulation with jitter
- * @param {ClickConfig} config
- * @returns {Promise<void>}
- */
-async function triggerClick({ interval, randomized }) {
-  const jitter = randomized ? Math.random() * 100 : 0;
-  const delay = Math.max(0, interval + jitter);
-
-  await new Promise(resolve => setTimeout(resolve, delay));
-  
-  const event = new MouseEvent('click', {
-    view: window,
-    bubbles: true,
-    cancelable: true
-  });
-  document.dispatchEvent(event);
-}
-
-/**
- * Normalizes input frequency to safe execution bounds
- * @param {number|string} input
- * @returns {number}
- */
-const normalizeRate = (input) => {
-  const sanitized = parseInt(input, 10);
-  return isNaN(sanitized) ? 1000 : Math.max(50, sanitized);
-};
-
-/**
- * Batch executes interaction sequence for automated tasks
- * @param {number} count
- * @param {ClickConfig} config
- */
-async function burstClick(count, config) {
-  for (let i = 0; i < count; i++) {
-    await triggerClick(config);
+class AutoclickerEdgeGuard extends Error {
+  constructor(reason, details) {
+    super(`Autoclicker Guard Failure: ${reason}`);
+    this.name = 'AutoclickerEdgeGuard';
+    this.details = details;
   }
 }
 
-export { triggerClick, normalizeRate, burstClick };
+export function createSafeClickTarget(target, constraints = {}) {
+  const { maxFreqMs = 10, bounds = { minX: 0, maxX: 1920, minY: 0, maxY: 1080 } } = constraints;
+  let lastClickTime = 0;
+
+  return new Proxy(target, {
+    get(obj, prop) {
+      if (prop === 'triggerClick') {
+        return function (x, y) {
+          const now = Date.now();
+          if (now - lastClickTime < maxFreqMs) {
+            throw new AutoclickerEdgeGuard('Rate limit exceeded (frequency spike detected)', { interval: now - lastClickTime });
+          }
+          if (typeof x !== 'number' || typeof y !== 'number' || Number.isNaN(x) || Number.isNaN(y)) {
+            throw new AutoclickerEdgeGuard('Invalid target coordinates', { x, y });
+          }
+          if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) {
+            throw new AutoclickerEdgeGuard('Coordinates out of virtual screen bounds', { x, y, bounds });
+          }
+
+          lastClickTime = now;
+          if (typeof obj.click === 'function') {
+            return obj.click(x, y);
+          }
+          return { status: 'simulated', x, y, timestamp: now };
+        };
+      }
+      return Reflect.get(obj, prop);
+    }
+  });
+}
+
+export function executeWithFallback(taskFn, fallbackFn, maxRetries = 3) {
+  return async function (...args) {
+    let attempts = 0;
+    while (attempts < maxRetries) {
+      try {
+        return await taskFn(...args);
+      } catch (err) {
+        attempts++;
+        if (err instanceof AutoclickerEdgeGuard) {
+          if (attempts >= maxRetries) {
+            return fallbackFn(err, ...args);
+          }
+          const delay = Math.pow(2, attempts) * 15 + Math.random() * 10;
+          await new Promise((res) => setTimeout(res, delay));
+        } else {
+          throw err;
+        }
+      }
+    }
+  };
+}
