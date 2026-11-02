@@ -1,37 +1,28 @@
-const generateJitter = (base, range) => Math.floor(base + (Math.random() * range * 2 - range));
-
-const clickAt = (x, y) => {
-  const event = new MouseEvent('click', {
-    view: window,
-    bubbles: true,
-    cancelable: true,
-    clientX: x,
-    clientY: y
-  });
-  document.elementFromPoint(x, y)?.dispatchEvent(event);
+const validateConfig = (cfg) => {
+  const schema = { interval: 'number', duration: 'number', jitter: 'boolean' };
+  return Object.keys(schema).every(k => typeof cfg[k] === schema[k]);
 };
 
-const batchSequence = async (coords, interval) => {
-  for (const [x, y] of coords) {
-    clickAt(x, y);
-    await new Promise(r => setTimeout(r, generateJitter(interval, interval * 0.2)));
+const mainLoop = (config, action) => {
+  if (!validateConfig(config)) {
+    throw new Error('invalid config schema detected');
   }
-};
 
-const throttleClick = (fn, limit) => {
-  let last = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - last >= limit) {
-      last = now;
-      fn(...args);
-    }
+  let elapsed = 0;
+  const execute = () => {
+    const jitter = config.jitter ? Math.random() * 100 : 0;
+    setTimeout(() => {
+      try {
+        action();
+        elapsed += config.interval + jitter;
+        if (elapsed < config.duration) execute();
+      } catch (e) {
+        console.error('execution failure:', e.message);
+      }
+    }, config.interval + jitter);
   };
+
+  execute();
 };
 
-export const utils = {
-  jitter: generateJitter,
-  trigger: clickAt,
-  sequence: batchSequence,
-  throttledTrigger: throttleClick
-};
+module.exports = { mainLoop };
