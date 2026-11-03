@@ -1,59 +1,45 @@
-const DEFAULTS = Object.freeze({
-  minDelayMs: 40,
-  maxDelayMs: 120,
-  jitterStrength: 0.25,
-  maxBurstClicks: 100,
-  targetSelector: '.click-target',
-  antiDetection: true,
+const fs = require('fs');
+
+const DEFAULT_CONFIG = Object.freeze({
+  cps: 12,
+  button: 'left',
+  jitter: 0.15,
+  targetWindow: 'Active Window',
+  hotkeys: { start: 'F8', stop: 'F9', emergency: 'Escape' },
+  burstMode: { enabled: false, count: 5, pauseMs: 200 },
+  humanize: true
 });
 
-const createJitteredTiming = (min, max, strength) => {
-  const base = min + Math.random() * (max - min);
-  const variance = base * strength * (Math.random() - 0.5);
-  return Math.floor(Math.max(10, base + variance));
-};
+function loadConfig(userPath = null, overrides = {}) {
+  let userConfig = {};
 
-class DynamicConfigStore {
-  #data = new Map(Object.entries(DEFAULTS));
-
-  constructor(initial = {}) {
-    this.update(initial);
-  }
-
-  update(patch) {
-    for (const [key, val] of Object.entries(patch)) {
-      if (val !== undefined && val !== null) {
-        this.#data.set(key, val);
-      }
+  if (userPath && fs.existsSync(userPath)) {
+    try {
+      const raw = fs.readFileSync(userPath, 'utf8');
+      userConfig = JSON.parse(raw);
+    } catch {
+      userConfig = {};
     }
-    return this;
   }
 
-  get nextInterval() {
-    return createJitteredTiming(
-      this.#data.get('minDelayMs'),
-      this.#data.get('maxDelayMs'),
-      this.#data.get('jitterStrength')
-    );
-  }
+  const merged = Object.assign({}, DEFAULT_CONFIG, userConfig, overrides);
+  merged.hotkeys = Object.assign({}, DEFAULT_CONFIG.hotkeys, userConfig.hotkeys, overrides.hotkeys);
+  merged.burstMode = Object.assign({}, DEFAULT_CONFIG.burstMode, userConfig.burstMode, overrides.burstMode);
 
-  toObject() {
-    return Object.fromEntries(this.#data.entries());
-  }
-}
-
-const store = new DynamicConfigStore();
-
-export const config = new Proxy(store, {
-  get(target, prop, receiver) {
-    if (Reflect.has(target, prop)) {
+  return new Proxy(merged, {
+    get(target, prop, receiver) {
+      if (prop === 'intervalMs') {
+        const baseMs = 1000 / Math.max(1, target.cps);
+        if (!target.humanize || target.jitter <= 0) return baseMs;
+        const variance = (Math.random() * 2 - 1) * target.jitter * baseMs;
+        return Math.max(1, Math.round(baseMs + variance));
+      }
+      if (prop === 'export') {
+        return () => JSON.stringify(target, null, 2);
+      }
       return Reflect.get(target, prop, receiver);
     }
-    const state = target.toObject();
-    return prop in state ? state[prop] : undefined;
-  },
-  set(target, prop, value) {
-    target.update({ [prop]: value });
-    return true;
-  }
-});
+  });
+}
+
+module.exports = { loadConfig, DEFAULT_CONFIG };
