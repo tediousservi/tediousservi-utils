@@ -1,25 +1,32 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_DIR = path.join(__dirname, 'logs');
-const MAX_SIZE = 1024 * 1024;
+const LOG_FILE = path.join(__dirname, 'tedious.log');
 
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+const logger = {
+  level: 'info',
+  levels: { debug: 0, info: 1, error: 2 },
 
-const rotate = (file) => {
-  const timestamp = Date.now();
-  fs.renameSync(file, `${file}.${timestamp}.old`);
-};
+  format: (level, message) => `[${new Date().toISOString()}] [${level.toUpperCase()}]: ${message}\n`,
 
-const logger = (message) => {
-  const logFile = path.join(LOG_DIR, 'tediousservi.log');
-  const entry = `[${new Date().toISOString()}] ${message}\n`;
+  write: (level, msg) => {
+    if (logger.levels[level] < logger.levels[logger.level]) return;
+    const entry = logger.format(level, msg);
+    process.stdout.write(entry);
+    fs.appendFile(LOG_FILE, entry, (err) => {
+      if (err) console.error('Logging disaster:', err);
+    });
+  },
 
-  if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_SIZE) {
-    rotate(logFile);
+  debug: (msg) => logger.write('debug', msg),
+  info: (msg) => logger.write('info', msg),
+  error: (msg) => logger.write('error', msg),
+
+  stream: () => {
+    return {
+      write: (data) => logger.info(data.toString().trim())
+    };
   }
-
-  fs.appendFileSync(logFile, entry);
 };
 
-module.exports = { logger };
+module.exports = logger;
