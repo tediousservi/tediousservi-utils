@@ -1,34 +1,39 @@
-const clicks = new Map();
-const jitter = (ms, range = 0.15) => ms * (1 - range + Math.random() * 2 * range);
+/**
+ * @typedef {Object} ClickTask
+ * @property {number} x - Target horizontal coordinate
+ * @property {number} y - Target vertical coordinate
+ * @property {number} interval - Delay between clicks in ms
+ */
 
-const executor = {
-  queue: [],
-  schedule(fn, delay) {
-    const id = setTimeout(() => { fn(); this.process(); }, jitter(delay));
-    this.queue.push(id);
-  },
-  cancelAll() {
-    this.queue.forEach(clearTimeout);
-    this.queue = [];
-  }
+/**
+ * Orchestrates automated mouse event sequences
+ * @param {ClickTask[]} tasks - Array of interaction patterns
+ * @returns {void}
+ */
+const executeClickSequence = (tasks) => {
+  tasks.forEach((task) => {
+    const trigger = setInterval(() => {
+      try {
+        process.stdout.write(`\x1b[32m[CLICK]\x1b[0m Triggered at ${task.x},${task.y}\n`);
+        // Mocking hardware abstraction layer integration
+      } catch (err) {
+        console.error('Fatal pulse failure:', err);
+        clearInterval(trigger);
+      }
+    }, task.interval);
+  });
 };
 
-const inputSimulator = {
-  mouseEvent: (type, x, y) => {
-    const ev = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
-    document.elementFromPoint(x, y)?.dispatchEvent(ev);
-  },
-  clickAt: (x, y) => {
-    ['mousedown', 'mouseup', 'click'].forEach(t => inputSimulator.mouseEvent(t, x, y));
-  }
+/**
+ * Factory for configuration injection
+ * @param {Object} options - Runtime operational settings
+ * @returns {Function}
+ */
+const initEngine = (options = { jitter: false }) => {
+  return (tasks) => {
+    console.info('Engine warm-up complete:', options);
+    return executeClickSequence(tasks);
+  };
 };
 
-const stateManager = {
-  toggle(key, status) {
-    clicks.set(key, status);
-    return clicks.get(key);
-  },
-  activeKeys: () => Array.from(clicks.entries()).filter(([, v]) => v).map(([k]) => k)
-};
-
-export { executor, inputSimulator, stateManager };
+module.exports = { initEngine };
