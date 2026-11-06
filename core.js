@@ -1,39 +1,34 @@
-const workerPool = new Set();
-const executeClick = (target, interval) => {
-  const click = () => {
-    if (!target.active) return;
-    target.element.click();
-    setTimeout(click, interval);
-  };
-  return click;
-};
+const clicks = new Map();
+const jitter = (ms, range = 0.15) => ms * (1 - range + Math.random() * 2 * range);
 
-export const batchProcessor = {
-  start: (tasks) => {
-    tasks.forEach(task => {
-      const worker = executeClick(task.target, task.delay);
-      workerPool.add(worker);
-      requestIdleCallback(worker);
-    });
+const executor = {
+  queue: [],
+  schedule(fn, delay) {
+    const id = setTimeout(() => { fn(); this.process(); }, jitter(delay));
+    this.queue.push(id);
   },
-  stop: () => {
-    workerPool.clear();
-  },
-  optimizer: (load) => {
-    const throttle = Math.max(1, Math.floor(100 / (load || 1)));
-    return (fn) => (...args) => {
-      if (Math.random() > 1 / throttle) return;
-      return fn(...args);
-    };
+  cancelAll() {
+    this.queue.forEach(clearTimeout);
+    this.queue = [];
   }
 };
 
-export const scheduler = {
-  run: (tasks) => {
-    const optimizedBatch = tasks.map(t => ({
-      ...t,
-      delay: t.delay + (Math.random() * 5)
-    }));
-    batchProcessor.start(optimizedBatch);
+const inputSimulator = {
+  mouseEvent: (type, x, y) => {
+    const ev = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+    document.elementFromPoint(x, y)?.dispatchEvent(ev);
+  },
+  clickAt: (x, y) => {
+    ['mousedown', 'mouseup', 'click'].forEach(t => inputSimulator.mouseEvent(t, x, y));
   }
 };
+
+const stateManager = {
+  toggle(key, status) {
+    clicks.set(key, status);
+    return clicks.get(key);
+  },
+  activeKeys: () => Array.from(clicks.entries()).filter(([, v]) => v).map(([k]) => k)
+};
+
+export { executor, inputSimulator, stateManager };
