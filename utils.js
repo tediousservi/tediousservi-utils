@@ -1,51 +1,61 @@
-class ClickDataPipeline {
-  constructor(baseIntervalMs = 100, entropyFactor = 0.15) {
-    this.baseInterval = baseIntervalMs;
-    this.entropy = entropyFactor;
-    this.buffer = new Uint32Array(1024);
-    this.head = 0;
-  }
+class CadencePurger {
+  #activeLoops = new Map();
+  #jitterFactor = 0.15;
 
-  *generateJitteredSequence(count, bounds = { x: 1920, y: 1080 }) {
-    let lastX = Math.floor(bounds.x / 2);
-    let lastY = Math.floor(bounds.y / 2);
+  register(id, fn, intervalMs) {
+    this.unregister(id);
 
-    for (let i = 0; i < count; i++) {
-      const u1 = Math.random() || 0.0001;
-      const u2 = Math.random();
-      const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    const executor = () => {
+      if (!this.#activeLoops.has(id)) return;
+      const meta = this.#activeLoops.get(id);
 
-      const intervalJitter = Math.floor(this.baseInterval + z0 * (this.baseInterval * this.entropy));
-      const deltaX = Math.floor(z0 * 5);
-      const deltaY = Math.floor(Math.sin(z0) * 5);
+      const variance = (Math.random() * 2 - 1) * (intervalMs * this.#jitterFactor);
+      const nextDelay = Math.max(10, Math.round(intervalMs + variance));
 
-      lastX = Math.max(0, Math.min(bounds.x, lastX + deltaX));
-      lastY = Math.max(0, Math.min(bounds.y, lastY + deltaY));
+      try {
+        fn(meta.clicks++);
+      } catch (err) {
+        meta.errors++;
+        if (meta.errors > 5) return this.unregister(id);
+      }
 
-      const packedData = (lastX & 0xFFF) | ((lastY & 0xFFF) << 12);
-      this.buffer[this.head++ % this.buffer.length] = packedData;
-
-      yield {
-        index: i,
-        x: lastX,
-        y: lastY,
-        delay: Math.max(10, intervalJitter),
-        checksum: (packedData ^ intervalJitter) >>> 0
-      };
-    }
-  }
-
-  parsePackedCoordinate(packed) {
-    return {
-      x: packed & 0xFFF,
-      y: (packed >> 12) & 0xFFF
+      meta.timer = setTimeout(executor, nextDelay);
     };
+
+    const entry = { clicks: 0, errors: 0, timer: null };
+    this.#activeLoops.set(id, entry);
+    entry.timer = setTimeout(executor, intervalMs);
   }
 
-  getBufferedHistory() {
-    return Array.from(this.buffer.slice(0, Math.min(this.head, this.buffer.length)))
-      .map(packed => this.parsePackedCoordinate(packed));
+  unregister(id) {
+    const target = this.#activeLoops.get(id);
+    if (target) {
+      clearTimeout(target.timer);
+      this.#activeLoops.delete(id);
+      return true;
+    }
+    return false;
+  }
+
+  flush(predicate = () => true) {
+    let swept = 0;
+    for (const [id, meta] of this.#activeLoops.entries()) {
+      if (predicate(id, meta)) {
+        clearTimeout(meta.timer);
+        this.#activeLoops.delete(id);
+        swept++;
+      }
+    }
+    return swept;
+  }
+
+  get stats() {
+    return Array.from(this.#activeLoops.entries()).map(([id, meta]) => ({
+      id,
+      clicks: meta.clicks,
+      errors: meta.errors
+    }));
   }
 }
 
-module.exports = { ClickDataPipeline };
+module.exports = { CadencePurger };
