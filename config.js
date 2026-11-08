@@ -1,45 +1,39 @@
-const fs = require('fs');
-
-const DEFAULT_CONFIG = Object.freeze({
-  cps: 12,
-  button: 'left',
-  jitter: 0.15,
-  targetWindow: 'Active Window',
-  hotkeys: { start: 'F8', stop: 'F9', emergency: 'Escape' },
-  burstMode: { enabled: false, count: 5, pauseMs: 200 },
-  humanize: true
+const DEFAULT_SETTINGS = Object.freeze({
+  clickInterval: 80,
+  jitterRange: [-3, 3],
+  activationKey: 'F8',
+  targetTitle: '',
+  holdDuration: 15,
+  safetyCap: 5000
 });
 
-function loadConfig(userPath = null, overrides = {}) {
-  let userConfig = {};
+function loadConfig(userOverrides = {}) {
+  const store = new Map();
+  const keys = new Set([...Object.keys(DEFAULT_SETTINGS), ...Object.keys(userOverrides)]);
 
-  if (userPath && fs.existsSync(userPath)) {
-    try {
-      const raw = fs.readFileSync(userPath, 'utf8');
-      userConfig = JSON.parse(raw);
-    } catch {
-      userConfig = {};
-    }
+  for (const key of keys) {
+    const overrideVal = userOverrides[key];
+    const defaultVal = DEFAULT_SETTINGS[key];
+    store.set(key, overrideVal !== undefined ? overrideVal : defaultVal);
   }
 
-  const merged = Object.assign({}, DEFAULT_CONFIG, userConfig, overrides);
-  merged.hotkeys = Object.assign({}, DEFAULT_CONFIG.hotkeys, userConfig.hotkeys, overrides.hotkeys);
-  merged.burstMode = Object.assign({}, DEFAULT_CONFIG.burstMode, userConfig.burstMode, overrides.burstMode);
-
-  return new Proxy(merged, {
-    get(target, prop, receiver) {
-      if (prop === 'intervalMs') {
-        const baseMs = 1000 / Math.max(1, target.cps);
-        if (!target.humanize || target.jitter <= 0) return baseMs;
-        const variance = (Math.random() * 2 - 1) * target.jitter * baseMs;
-        return Math.max(1, Math.round(baseMs + variance));
-      }
-      if (prop === 'export') {
-        return () => JSON.stringify(target, null, 2);
-      }
-      return Reflect.get(target, prop, receiver);
+  return new Proxy(store, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined;
+      if (!target.has(prop)) return undefined;
+      const val = target.get(prop);
+      if (prop === 'clickInterval') return Math.max(1, Number(val) || 80);
+      if (prop === 'safetyCap') return Math.min(10000, Math.max(100, Number(val) || 5000));
+      return val;
+    },
+    set(target, prop, value) {
+      target.set(prop, value);
+      return true;
+    },
+    has(target, prop) {
+      return target.has(prop);
     }
   });
 }
 
-module.exports = { loadConfig, DEFAULT_CONFIG };
+module.exports = { loadConfig, DEFAULT_SETTINGS };
