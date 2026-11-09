@@ -1,35 +1,31 @@
-const validateClickSequence = (coords) => {
-  const isValid = (c) => typeof c === 'number' && Number.isFinite(c) && c >= 0;
-  return Array.isArray(coords) && coords.every(p => isValid(p.x) && isValid(p.y));
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const jitter = (value, percent = 0.1) => {
+  const variance = value * percent;
+  return value + (Math.random() * variance * 2 - variance);
 };
 
-const sanitizeInterval = (ms) => {
-  const min = 50;
-  const max = 60000;
-  const val = parseInt(ms, 10);
-  return isNaN(val) ? min : Math.min(Math.max(val, min), max);
-};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const processClickLoop = (config, action) => {
-  if (!validateClickSequence(config.targets)) {
-    throw new Error('Invalid coordinate array provided');
+const clickSequence = async (count, baseDelay) => {
+  for (let i = 0; i < count; i++) {
+    console.log(`Executing click ${i + 1}/${count}`);
+    await sleep(jitter(baseDelay, 0.2));
   }
-
-  const safeInterval = sanitizeInterval(config.delay);
-  let iteration = 0;
-
-  const tick = () => {
-    if (iteration >= config.limit) return;
-    
-    config.targets.forEach(pos => {
-      action(pos.x, pos.y);
-    });
-    
-    iteration++;
-    setTimeout(tick, safeInterval);
-  };
-
-  return tick;
 };
 
-module.exports = { validateClickSequence, sanitizeInterval, processClickLoop };
+const humanizedDelay = (base, variation = 50) => base + Math.round(Math.random() * variation * 2 - variation);
+
+const coordinateScrambler = (x, y, range = 5) => ({
+  x: x + getRandomInt(-range, range),
+  y: y + getRandomInt(-range, range)
+});
+
+module.exports = {
+  getRandomInt,
+  jitter,
+  sleep,
+  clickSequence,
+  humanizedDelay,
+  coordinateScrambler
+};
