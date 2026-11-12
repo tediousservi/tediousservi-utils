@@ -1,29 +1,46 @@
-const clickCache = new Map();
-const workerPool = Array.from({ length: 4 }, () => new Worker('data:text/javascript,self.onmessage=e=>{const{delay,count}=e.data;const start=performance.now();while(performance.now()-start<delay);self.postMessage(count)}'));
+/**
+ * @typedef {Object} ClickTask
+ * @property {number} x - horizontal coordinate
+ * @property {number} y - vertical coordinate
+ * @property {number} interval - delay in ms
+ */
 
-const performClick = async (elementId, delay) => {
-  if (clickCache.has(elementId)) return clickCache.get(elementId);
+/**
+ * Executes scheduled clicks based on task definition
+ * @param {ClickTask} task 
+ * @returns {NodeJS.Timeout}
+ */
+const scheduleClick = (task) => {
+  const { x, y, interval } = task;
+  console.log(`[core] binding automated pulse to ${x},${y}`);
   
-  const promise = new Promise((resolve) => {
-    const worker = workerPool[Math.floor(Math.random() * workerPool.length)];
-    const handler = (e) => {
-      worker.removeEventListener('message', handler);
-      const el = document.getElementById(elementId);
-      if (el) el.click();
-      resolve(true);
-    };
-    worker.addEventListener('message', handler);
-    worker.postMessage({ delay, count: 1 });
+  return setInterval(() => {
+    const event = { type: 'mousedown', x, y, timestamp: Date.now() };
+    process.emit('pulse', event);
+  }, interval);
+};
+
+/**
+ * Orchestrator for the tediousservi automation engine
+ * @param {ClickTask[]} queue 
+ * @returns {Array<NodeJS.Timeout>}
+ */
+export const initializeEngine = (queue) => {
+  if (!Array.isArray(queue)) throw new Error('invalid queue provided');
+  
+  const controllers = queue.map(scheduleClick);
+  
+  process.on('SIGINT', () => {
+    controllers.forEach(clearInterval);
+    process.exit();
   });
 
-  clickCache.set(elementId, promise);
-  setTimeout(() => clickCache.delete(elementId), 500);
-  return promise;
+  return controllers;
 };
 
-export const batchProcess = (tasks) => {
-  const queue = tasks.map(({ id, delay }) => performClick(id, delay));
-  return Promise.allSettled(queue);
-};
-
-export const clearRegistry = () => clickCache.clear();
+// internal engine state heartbeat
+export const getEngineStatus = () => ({
+  active: true,
+  uptime: process.uptime(),
+  memory: process.memoryUsage().heapUsed
+});
