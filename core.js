@@ -1,46 +1,35 @@
-/**
- * @typedef {Object} ClickTask
- * @property {number} x - horizontal coordinate
- * @property {number} y - vertical coordinate
- * @property {number} interval - delay in ms
- */
+const fs = require('fs');
+const path = require('path');
 
-/**
- * Executes scheduled clicks based on task definition
- * @param {ClickTask} task 
- * @returns {NodeJS.Timeout}
- */
-const scheduleClick = (task) => {
-  const { x, y, interval } = task;
-  console.log(`[core] binding automated pulse to ${x},${y}`);
-  
-  return setInterval(() => {
-    const event = { type: 'mousedown', x, y, timestamp: Date.now() };
-    process.emit('pulse', event);
-  }, interval);
+const DEFAULTS = {
+  interval: 100,
+  jitter: 5,
+  button: 'left',
+  safety_toggle: true
 };
 
-/**
- * Orchestrator for the tediousservi automation engine
- * @param {ClickTask[]} queue 
- * @returns {Array<NodeJS.Timeout>}
- */
-export const initializeEngine = (queue) => {
-  if (!Array.isArray(queue)) throw new Error('invalid queue provided');
-  
-  const controllers = queue.map(scheduleClick);
-  
-  process.on('SIGINT', () => {
-    controllers.forEach(clearInterval);
-    process.exit();
-  });
+const CONFIG_PATH = path.join(process.cwd(), 'config.json');
 
-  return controllers;
+const loadConfig = () => {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2));
+      return DEFAULTS;
+    }
+    const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const userConfig = JSON.parse(fileContent);
+    return Object.assign({}, DEFAULTS, userConfig);
+  } catch (err) {
+    return DEFAULTS;
+  }
 };
 
-// internal engine state heartbeat
-export const getEngineStatus = () => ({
-  active: true,
-  uptime: process.uptime(),
-  memory: process.memoryUsage().heapUsed
-});
+const state = {
+  config: loadConfig(),
+  refresh: () => {
+    state.config = loadConfig();
+    console.log('configuration state updated from disk');
+  }
+};
+
+module.exports = state;
