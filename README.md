@@ -1,44 +1,53 @@
 # tediousservi-utils
 
-`tediousservi-utils` is a lightweight, high-performance Node.js utility library designed to simulate automated mouse events and repetitive UI interactions. It provides a robust programmatic interface for developers needing to bridge script-based automation with system-level cursor control.
+A robust Node.js utility suite designed for high-performance automation and cross-platform mouse simulation. This project provides a reliable bridge between JavaScript execution environments and system-level input events.
 
 ## Features
 
-*   **Precision Timing:** Supports microsecond-interval clicking, allowing for high-frequency automation without blocking the Node.js event loop.
-*   **Coordinate-based Mapping:** Easily target specific screen regions using absolute or relative X/Y coordinates.
-*   **Anti-Detection Patterns:** Includes built-in jitter and randomized delay modifiers to simulate organic human interaction patterns.
-*   **Cross-Platform Compatibility:** Leverages native system bindings to ensure consistent performance across Windows, macOS, and Linux.
+*   **Precision Interval Control:** Execute clicks with millisecond accuracy using non-blocking event loops.
+*   **Dynamic Coordinate Mapping:** Easily target specific UI elements via screen-relative or absolute coordinate injection.
+*   **Jitter Compensation:** Built-in randomization algorithms to mimic natural human behavior and evade basic heuristic detection.
+*   **Event Queue Management:** Batch processing support to prevent input overflow during high-frequency automation tasks.
 
 ## Installation
 
-Ensure you have [Node.js](https://nodejs.org/) installed, then run the following command in your terminal:
+Ensure you have [Node.js](https://nodejs.org/) installed (v16.0.0+ recommended). Install the package via npm:
 
 ```bash
 npm install tediousservi-utils
+# Or via yarn
+yarn add tediousservi-utils
 ```
 
-If you are using native bindings for the first time, ensure your environment has the necessary build tools (e.g., `windows-build-tools` or `xcode-select`).
+*Note: Depending on your OS, native build tools may be required to compile the underlying input drivers (e.g., `build-essential` on Linux).*
 
 ## Usage
+
+Initialize the automation controller and define your click sequence:
 
 ```javascript
 const { AutoClicker } = require('tediousservi-utils');
 
-// Initialize with a 50ms interval between clicks
-const clicker = new AutoClicker({ interval: 50 });
+const bot = new AutoClicker({
+    delay: 500,        // 500ms between clicks
+    jitter: 50         // Adds +/- 50ms variance
+});
 
 // Start clicking at current mouse position
-clicker.start();
+bot.start();
 
-// Stop after 5 seconds
+// Stop after 10 seconds
 setTimeout(() => {
-    clicker.stop();
+    bot.stop();
     console.log('Automation task completed.');
-}, 5000);
+}, 10000);
 ```
 
 ## License
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+*Disclaimer: This tool is intended for testing and educational purposes only. Ensure you comply with the Terms of Service of any application you interact with using this software.*
