@@ -1,20 +1,35 @@
-const retryOperation = async (fn, attempts = 3, delay = 1000) => {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const isLast = i === attempts - 1;
-      if (isLast) throw err;
-      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+const clickSafetyValve = (target, attempts = 0) => {
+  const MAX_ERRORS = 5;
+  try {
+    if (typeof target !== 'function') throw new TypeError('Target is not a function');
+    return target();
+  } catch (err) {
+    if (attempts >= MAX_ERRORS) {
+      console.error('Terminal click failure:', err.message);
+      return null;
     }
+    const jitter = Math.floor(Math.random() * 100);
+    return new Promise(resolve => setTimeout(() => {
+      resolve(clickSafetyValve(target, attempts + 1));
+    }, 50 * (attempts + 1) + jitter));
   }
 };
 
-const withTimeout = (promise, ms) => {
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('operation timed out')), ms)
-  );
-  return Promise.race([promise, timeout]);
+const validateElement = (el) => {
+  if (!el || typeof el.click !== 'function') {
+    throw new Error('Invalid DOM reference for autoclicker');
+  }
+  return el;
 };
 
-module.exports = { retryOperation, withTimeout };
+const safeTrigger = async (element) => {
+  try {
+    const node = validateElement(element);
+    await clickSafetyValve(() => node.click());
+    return { success: true, timestamp: Date.now() };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+};
+
+module.exports = { safeTrigger, clickSafetyValve };
