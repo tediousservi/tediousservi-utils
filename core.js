@@ -1,35 +1,35 @@
-const fs = require('fs');
-const path = require('path');
-
-const DEFAULTS = {
-  interval: 100,
-  jitter: 5,
-  button: 'left',
-  safety_toggle: true
+const ClickBuffer = {
+  queue: new WeakMap(),
+  add(target, sequence) {
+    const payload = Array.isArray(sequence) ? sequence : [sequence];
+    this.queue.set(target, [...(this.queue.get(target) || []), ...payload]);
+  },
+  dispatch(target, windowRef = window) {
+    const clicks = this.queue.get(target) || [];
+    clicks.forEach((evt, i) => {
+      setTimeout(() => {
+        const mouseEvent = new MouseEvent('click', { bubbles: true, ...evt });
+        target.dispatchEvent(mouseEvent);
+      }, i * (evt.delay || 50));
+    });
+    this.queue.delete(target);
+  }
 };
 
-const CONFIG_PATH = path.join(process.cwd(), 'config.json');
-
-const loadConfig = () => {
+const serializeSequence = (data) => {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2));
-      return DEFAULTS;
-    }
-    const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
-    const userConfig = JSON.parse(fileContent);
-    return Object.assign({}, DEFAULTS, userConfig);
-  } catch (err) {
-    return DEFAULTS;
+    return btoa(JSON.stringify(data));
+  } catch (e) {
+    return null;
   }
 };
 
-const state = {
-  config: loadConfig(),
-  refresh: () => {
-    state.config = loadConfig();
-    console.log('configuration state updated from disk');
+const deserializeSequence = (str) => {
+  try {
+    return JSON.parse(atob(str));
+  } catch (e) {
+    return [];
   }
 };
 
-module.exports = state;
+export { ClickBuffer, serializeSequence, deserializeSequence };
