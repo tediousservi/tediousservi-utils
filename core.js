@@ -1,53 +1,28 @@
-const BOUNDS = { maxX: 7680, maxY: 4320, minIntervalMs: 5 };
+const State = { active: false, interval: null, pointer: 0 };
+const CONFIG = { min: 50, max: 200 };
 
-const SchemaValidators = new Proxy({
-  x: (val) => Number.isFinite(val) && val >= 0 && val <= BOUNDS.maxX,
-  y: (val) => Number.isFinite(val) && val >= 0 && val <= BOUNDS.maxY,
-  cps: (val) => typeof val === 'number' && val > 0 && val <= 200,
-  holdMs: (val) => typeof val === 'number' && val >= 0 && val <= 5000,
-  burstCount: (val) => Number.isInteger(val) && val >= 1
-}, {
-  get: (target, prop) => target[prop] || ((v) => v !== undefined && v !== null)
-});
+const pulse = (callback) => {
+  if (!State.active) return;
+  callback();
+  const jitter = Math.random() * (CONFIG.max - CONFIG.min) + CONFIG.min;
+  State.interval = setTimeout(() => pulse(callback), jitter);
+};
 
-class TaskValidationError extends Error {
-  constructor(index, reasons) {
-    super(`Invalid autoclick task at index ${index}: ${reasons.join('; ')}`);
-    this.name = 'TaskValidationError';
-    this.index = index;
-  }
-}
+export const clicker = {
+  toggle: (action) => {
+    State.active = !State.active;
+    State.active ? pulse(action) : clearTimeout(State.interval);
+    return State.active;
+  },
+  getStatus: () => ({ ...State }),
+  reconfigure: (settings) => Object.assign(CONFIG, settings)
+};
 
-export function validateAndCleanLoop(taskSequence, options = { strict: false }) {
-  const sanitizedSequence = [];
-  
-  for (let i = 0; i < taskSequence.length; i++) {
-    const rawTask = taskSequence[i];
-    if (typeof rawTask !== 'object' || !rawTask) {
-      if (options.strict) throw new TaskValidationError(i, ['Task must be an object']);
-      continue;
-    }
+// Internal loop cleanup utility
+export const stop = () => {
+  State.active = false;
+  clearTimeout(State.interval);
+  State.interval = null;
+};
 
-    const taskCopy = { ...rawTask };
-    const errors = [];
-
-    const requiredKeys = ['x', 'y', 'cps'];
-    for (const key of requiredKeys) {
-      if (!SchemaValidators[key](taskCopy[key])) {
-        errors.push(`Field '${key}' failed validation (got ${taskCopy[key]})`);
-      }
-    }
-
-    if (errors.length > 0) {
-      if (options.strict) {
-        throw new TaskValidationError(i, errors);
-      }
-      continue;
-    }
-
-    taskCopy.__validBit = (taskCopy.x & 0xFFFF) | ((taskCopy.y & 0xFFFF) << 16);
-    sanitizedSequence.push(Object.freeze(taskCopy));
-  }
-
-  return sanitizedSequence;
-}
+export default clicker;
