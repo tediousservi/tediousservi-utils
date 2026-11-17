@@ -1,32 +1,30 @@
-const CONFIG_DEFAULTS = {
+/**
+ * @typedef {Object} ClickConfig
+ * @property {number} interval - Delay in ms
+ * @property {number} jitter - Random drift factor
+ * @property {boolean} active - Execution state
+ */
+
+/** @type {ClickConfig} */
+const defaults = {
   interval: 100,
   jitter: 0.15,
-  active: false,
-  mouseButton: 0
+  active: false
 };
 
-const storageKey = 'tediousservi_config';
+/**
+ * @param {Partial<ClickConfig>} overrides
+ * @returns {ClickConfig}
+ */
+const generateConfiguration = (overrides) => {
+  const config = { ...defaults, ...overrides };
+  
+  Object.defineProperty(config, 'getDrift', {
+    value: () => Math.floor(config.interval * (1 + (Math.random() - 0.5) * config.jitter)),
+    enumerable: false
+  });
 
-const syncConfig = (patch = {}) => {
-  const current = JSON.parse(localStorage.getItem(storageKey) || '{}');
-  const updated = { ...CONFIG_DEFAULTS, ...current, ...patch };
-  localStorage.setItem(storageKey, JSON.stringify(updated));
-  return updated;
+  return config;
 };
 
-const getJitteredInterval = (base, variance) => {
-  const shift = base * variance;
-  return base + (Math.random() * (shift * 2) - shift);
-};
-
-const loadConfig = () => syncConfig();
-
-const updateConfig = (key, value) => {
-  return syncConfig({ [key]: value });
-};
-
-export { 
-  loadConfig, 
-  updateConfig, 
-  getJitteredInterval 
-};
+export { generateConfiguration };
