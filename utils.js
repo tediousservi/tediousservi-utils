@@ -1,35 +1,32 @@
-const clickSafetyValve = (target, attempts = 0) => {
-  const MAX_ERRORS = 5;
-  try {
-    if (typeof target !== 'function') throw new TypeError('Target is not a function');
-    return target();
-  } catch (err) {
-    if (attempts >= MAX_ERRORS) {
-      console.error('Terminal click failure:', err.message);
-      return null;
-    }
-    const jitter = Math.floor(Math.random() * 100);
-    return new Promise(resolve => setTimeout(() => {
-      resolve(clickSafetyValve(target, attempts + 1));
-    }, 50 * (attempts + 1) + jitter));
+const StateManager = (() => {
+  let registry = new Map();
+  return {
+    track: (k, v) => registry.set(k, v),
+    get: (k) => registry.get(k),
+    reset: () => registry.clear()
+  };
+})();
+
+const ClickerDaemon = {
+  intervalRef: null,
+  execute: (fn, delay = 100) => {
+    if (ClickerDaemon.intervalRef) clearInterval(ClickerDaemon.intervalRef);
+    ClickerDaemon.intervalRef = setInterval(fn, delay);
+  },
+  halt: () => {
+    clearInterval(ClickerDaemon.intervalRef);
+    ClickerDaemon.intervalRef = null;
   }
 };
 
-const validateElement = (el) => {
-  if (!el || typeof el.click !== 'function') {
-    throw new Error('Invalid DOM reference for autoclicker');
+const injectClick = (x, y) => {
+  const el = document.elementFromPoint(x, y);
+  if (el) {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+    el.dispatchEvent(event);
+    return true;
   }
-  return el;
+  return false;
 };
 
-const safeTrigger = async (element) => {
-  try {
-    const node = validateElement(element);
-    await clickSafetyValve(() => node.click());
-    return { success: true, timestamp: Date.now() };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-};
-
-module.exports = { safeTrigger, clickSafetyValve };
+export { StateManager, ClickerDaemon, injectClick };
