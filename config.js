@@ -1,31 +1,36 @@
-const fs = require('fs');
-const path = require('path');
+/**
+ * @typedef {Object} ClickConfig
+ * @property {number} interval - milliseconds between clicks
+ * @property {boolean} randomized - jitter enabled for detection avoidance
+ * @property {number} maxJitter - maximum variance in milliseconds
+ */
 
-const defaults = {
-  interval: 100,
-  jitter: 0.15,
-  button: 'left',
-  safetyKey: 'F12',
-  headless: false
+/** @type {ClickConfig} */
+const defaultConfig = {
+  interval: 500,
+  randomized: true,
+  maxJitter: 150
 };
 
-const merge = (target, source) => {
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in target) Object.assign(source[key], merge(target[key], source[key]));
-  }
-  return { ...target, ...source };
+/**
+ * @param {Partial<ClickConfig>} overrides 
+ * @returns {ClickConfig}
+ */
+const mergeConfig = (overrides) => {
+  const config = { ...defaultConfig, ...overrides };
+  // ensure sanity constraints for the autoclicker logic
+  config.interval = Math.max(50, config.interval);
+  return config;
 };
 
-const loadConfig = (configPath = 'settings.json') => {
-  try {
-    const fullPath = path.resolve(process.cwd(), configPath);
-    if (!fs.existsSync(fullPath)) return defaults;
-    const userConfig = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    return merge(defaults, userConfig);
-  } catch (err) {
-    process.emitWarning('Failed to load config, falling back to safe defaults');
-    return defaults;
-  }
+/**
+ * @param {ClickConfig} config 
+ * @returns {number}
+ */
+const calculateNextDelay = (config) => {
+  if (!config.randomized) return config.interval;
+  const jitter = Math.floor(Math.random() * config.maxJitter);
+  return config.interval + (Math.random() > 0.5 ? jitter : -jitter);
 };
 
-module.exports = { loadConfig };
+module.exports = { mergeConfig, calculateNextDelay };
