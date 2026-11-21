@@ -1,32 +1,23 @@
-const StateManager = (() => {
-  let registry = new Map();
-  return {
-    track: (k, v) => registry.set(k, v),
-    get: (k) => registry.get(k),
-    reset: () => registry.clear()
+const executeWithRetry = async (fn, attempts = 3, delay = 1000) => {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastError;
+};
+
+const wrapNetworkCall = (func) => {
+  return (...args) => {
+    console.log(`[tediousservi-utils] attempting network operation...`);
+    return executeWithRetry(() => func(...args));
   };
-})();
-
-const ClickerDaemon = {
-  intervalRef: null,
-  execute: (fn, delay = 100) => {
-    if (ClickerDaemon.intervalRef) clearInterval(ClickerDaemon.intervalRef);
-    ClickerDaemon.intervalRef = setInterval(fn, delay);
-  },
-  halt: () => {
-    clearInterval(ClickerDaemon.intervalRef);
-    ClickerDaemon.intervalRef = null;
-  }
 };
 
-const injectClick = (x, y) => {
-  const el = document.elementFromPoint(x, y);
-  if (el) {
-    const event = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-    el.dispatchEvent(event);
-    return true;
-  }
-  return false;
-};
-
-export { StateManager, ClickerDaemon, injectClick };
+module.exports = { executeWithRetry, wrapNetworkCall };
