@@ -1,28 +1,45 @@
-const State = { active: false, interval: null, pointer: 0 };
-const CONFIG = { min: 50, max: 200 };
+const buffer = new SharedArrayBuffer(1024);
+const heap = new Int32Array(buffer);
 
-const pulse = (callback) => {
-  if (!State.active) return;
-  callback();
-  const jitter = Math.random() * (CONFIG.max - CONFIG.min) + CONFIG.min;
-  State.interval = setTimeout(() => pulse(callback), jitter);
-};
+class ClickEngine {
+  constructor() {
+    this.registry = new Map();
+    this.tick = 0;
+  }
 
-export const clicker = {
-  toggle: (action) => {
-    State.active = !State.active;
-    State.active ? pulse(action) : clearTimeout(State.interval);
-    return State.active;
-  },
-  getStatus: () => ({ ...State }),
-  reconfigure: (settings) => Object.assign(CONFIG, settings)
-};
+  async burst(target, interval) {
+    const id = Math.random().toString(36).slice(2);
+    this.registry.set(id, { target, interval, last: Date.now() });
+    this._spin();
+    return id;
+  }
 
-// Internal loop cleanup utility
-export const stop = () => {
-  State.active = false;
-  clearTimeout(State.interval);
-  State.interval = null;
-};
+  _spin() {
+    if (this.lock) return;
+    this.lock = true;
+    
+    const process = () => {
+      const now = Date.now();
+      for (const [id, task] of this.registry) {
+        if (now - task.last >= task.interval) {
+          heap[0] = 1;
+          task.target.click();
+          task.last = now;
+        }
+      }
+      this.tick = requestAnimationFrame(process);
+    };
+    
+    process();
+  }
 
-export default clicker;
+  dispose(id) {
+    this.registry.delete(id);
+    if (this.registry.size === 0) {
+      cancelAnimationFrame(this.tick);
+      this.lock = false;
+    }
+  }
+}
+
+export const engine = new ClickEngine();
