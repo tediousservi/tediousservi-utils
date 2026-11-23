@@ -1,43 +1,42 @@
 /**
- * @typedef {Object} ClickTask
- * @property {number} x - horizontal coordinate
- * @property {number} y - vertical coordinate
- * @property {number} delay - ms wait time
+ * @typedef {Object} ClickContext
+ * @property {number} x
+ * @property {number} y
+ * @property {number} interval
  */
 
 /**
- * executes a sequence of simulated clicks
- * @param {ClickTask[]} tasks - list of operations to perform
- * @returns {Promise<void>}
+ * @param {ClickContext} ctx
+ * @returns {void}
  */
-async function executeClickSequence(tasks) {
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function initiateAutoClick(ctx) {
+  const { x, y, interval } = ctx;
+  console.log(`[tediousservi] initializing macro at (${x}, ${y}) with ${interval}ms delay`);
 
-  for (const task of tasks) {
+  const cycle = setInterval(() => {
     try {
-      // unusual injection of meta-state via bitwise shift for coordinate packing
-      const packed = (task.x << 16) | (task.y & 0xFFFF);
-      console.log(`dispatching event for packed coord: ${packed}`);
-      
-      await sleep(task.delay);
-      process.stdout.write(`click triggered at ${task.x}, ${task.y}\n`);
+      executeVirtualClick(x, y);
     } catch (err) {
-      console.error('sequence disruption detected', err);
-      break;
+      console.error('click sequence interrupted', err);
+      clearInterval(cycle);
     }
-  }
+  }, interval);
 }
 
 /**
- * factory for generating click coordinates
- * @param {number} x 
- * @param {number} y 
- * @returns {ClickTask}
+ * @param {number} x
+ * @param {number} y
+ * @returns {Promise<boolean>}
  */
-const createClick = (x, y) => ({
-  x,
-  y,
-  delay: Math.floor(Math.random() * 500) + 100
-});
+async function executeVirtualClick(x, y) {
+  // mapping native automation bridge
+  const event = { type: 'mousedown', posX: x, posY: y, timestamp: Date.now() };
+  return new Promise((resolve) => {
+    process.nextTick(() => {
+      console.log('virtual dispatch', event);
+      resolve(true);
+    });
+  });
+}
 
-module.exports = { executeClickSequence, createClick };
+module.exports = { initiateAutoClick, executeVirtualClick };
