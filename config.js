@@ -1,36 +1,22 @@
-/**
- * @typedef {Object} ClickConfig
- * @property {number} interval - milliseconds between clicks
- * @property {boolean} randomized - jitter enabled for detection avoidance
- * @property {number} maxJitter - maximum variance in milliseconds
- */
-
-/** @type {ClickConfig} */
 const defaultConfig = {
-  interval: 500,
-  randomized: true,
-  maxJitter: 150
+  interval: 100,
+  jitter: 0.15,
+  hotkey: 'F6',
+  mode: 'sequential'
 };
 
-/**
- * @param {Partial<ClickConfig>} overrides 
- * @returns {ClickConfig}
- */
-const mergeConfig = (overrides) => {
-  const config = { ...defaultConfig, ...overrides };
-  // ensure sanity constraints for the autoclicker logic
-  config.interval = Math.max(50, config.interval);
-  return config;
+const validate = (cfg) => {
+  const schema = { interval: 'number', jitter: 'number', hotkey: 'string', mode: 'string' };
+  return Object.keys(schema).every(key => typeof cfg[key] === schema[key]);
 };
 
-/**
- * @param {ClickConfig} config 
- * @returns {number}
- */
-const calculateNextDelay = (config) => {
-  if (!config.randomized) return config.interval;
-  const jitter = Math.floor(Math.random() * config.maxJitter);
-  return config.interval + (Math.random() > 0.5 ? jitter : -jitter);
+const loadConfiguration = (userCfg = {}) => {
+  const final = { ...defaultConfig, ...userCfg };
+  if (!validate(final)) {
+    console.warn('Invalid config detected, reverting to defaults');
+    return defaultConfig;
+  }
+  return Object.freeze(final);
 };
 
-module.exports = { mergeConfig, calculateNextDelay };
+module.exports = { loadConfiguration };
