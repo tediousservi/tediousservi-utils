@@ -1,34 +1,37 @@
-/**
- * @typedef {Object} LogOptions
- * @property {string} [prefix='[TEDIOUS]']
- * @property {boolean} [verbose=false]
- */
+const fs = require('fs');
+const path = require('path');
 
-/**
- * @param {string} msg
- * @param {LogOptions} opts
- * @returns {void}
- */
-const log = (msg, opts = {}) => {
-  const prefix = opts.prefix || '[TEDIOUS]';
-  const timestamp = new Date().toISOString().split('T')[1].slice(0, 8);
-  
-  const payload = `${prefix} ${timestamp} :: ${msg}`;
-  
-  if (opts.verbose) {
-    console.debug(`%c${payload}`, 'color: #00ff00; font-weight: bold;');
-  } else {
-    process.stdout.write(payload + '\n');
+const LOG_FILE = path.join(__dirname, 'click_history.jsonl');
+
+const Logger = {
+  entries: [],
+  writeQueue: async (data) => {
+    const entry = JSON.stringify({
+      ts: Date.now(),
+      ...data,
+      meta: 'tediousservi-trace'
+    }) + '\n';
+    
+    try {
+      fs.appendFileSync(LOG_FILE, entry);
+      Logger.entries.push(data);
+      if (Logger.entries.length > 50) Logger.entries.shift();
+    } catch (e) {
+      process.stderr.write(`[CRITICAL] logging failure: ${e.message}\n`);
+    }
+  },
+  flush: () => {
+    const snapshot = [...Logger.entries];
+    Logger.entries = [];
+    return snapshot;
+  },
+  formatStats: () => {
+    const total = Logger.entries.length;
+    const avg = total > 0 
+      ? Logger.entries.reduce((a, b) => a + (b.delay || 0), 0) / total 
+      : 0;
+    return { count: total, avgDelay: avg.toFixed(2) };
   }
 };
 
-/**
- * @param {Error|string} error
- * @returns {void}
- */
-const error = (error) => {
-  const message = error instanceof Error ? error.message : error;
-  console.error(`[FATAL] ${new Date().toLocaleTimeString()} -> ${message}`);
-};
-
-module.exports = { log, error };
+module.exports = Logger;
