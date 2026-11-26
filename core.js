@@ -1,62 +1,40 @@
-const defaultOptions = {
-  maxAttempts: 5,
-  baseDelayMs: 120,
-  maxDelayMs: 3000,
-  jitterFactor: 0.3,
-  backoffMultiplier: 1.8
+const ClickBuffer = {
+  queue: new Float64Array(1024),
+  cursor: 0,
+  push(delay) {
+    this.queue[this.cursor++ % this.queue.length] = delay;
+  },
+  getStats() {
+    const slice = this.queue.subarray(0, Math.min(this.cursor, this.queue.length));
+    return {
+      avg: slice.reduce((a, b) => a + b, 0) / slice.length,
+      jitter: Math.max(...slice) - Math.min(...slice)
+    };
+  }
 };
 
-function* jitteredBackoff(opts) {
-  let delay = opts.baseDelayMs;
-  while (true) {
-    const jitter = (Math.random() * 2 - 1) * opts.jitterFactor * delay;
-    yield Math.min(opts.maxDelayMs, Math.max(10, Math.floor(delay + jitter)));
-    delay *= opts.backoffMultiplier;
-  }
-}
-
-async function executeWithRetry(operation, options = {}) {
-  const config = { ...defaultOptions, ...options };
-  const delays = jitteredBackoff(config);
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
-    try {
-      const payload = await operation({ attempt, isLastAttempt: attempt === config.maxAttempts });
-      return { ok: true, attemptCount: attempt, payload };
-    } catch (err) {
-      lastError = err;
-      if (attempt < config.maxAttempts) {
-        const waitTime = delays.next().value;
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
+function spawnTrigger(element, interval, jitter) {
+  let next = Date.now() + interval;
+  
+  const cycle = () => {
+    const now = Date.now();
+    if (now >= next) {
+      try {
+        element.dispatchEvent(new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window
+        }));
+        ClickBuffer.push(now - next + interval);
+      } catch (e) {
+        console.error('Trigger failure:', e);
       }
+      next = now + interval + (Math.random() * jitter);
     }
-  }
-
-  return {
-    ok: false,
-    attemptCount: config.maxAttempts,
-    error: lastError || new Error('Network operation exceeded attempt threshold')
+    requestAnimationFrame(cycle);
   };
+  
+  return requestAnimationFrame(cycle);
 }
 
-function createClickerSyncRequest(url, payload = {}, retryOpts = {}) {
-  return executeWithRetry(async ({ attempt }) => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Clicker-Sequence': String(Date.now()),
-        'X-Retry-Attempt': String(attempt)
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Sync failure: HTTP ${response.status}`);
-    }
-    return await response.json();
-  }, retryOpts);
-}
-
-module.exports = { executeWithRetry, createClickerSyncRequest };
+export { ClickBuffer, spawnTrigger };
