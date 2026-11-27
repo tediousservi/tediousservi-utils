@@ -1,40 +1,37 @@
-const ClickBuffer = {
-  queue: new Float64Array(1024),
-  cursor: 0,
-  push(delay) {
-    this.queue[this.cursor++ % this.queue.length] = delay;
-  },
-  getStats() {
-    const slice = this.queue.subarray(0, Math.min(this.cursor, this.queue.length));
-    return {
-      avg: slice.reduce((a, b) => a + b, 0) / slice.length,
-      jitter: Math.max(...slice) - Math.min(...slice)
-    };
+const ClickBuffer = new WeakMap();
+
+const initializeClickStream = (target, interval) => {
+  if (!target || typeof target.click !== 'function') {
+    throw new Error('Invalid DOM target provided');
+  }
+  
+  const metadata = {
+    active: true,
+    timer: null,
+    clicks: 0
+  };
+
+  const orchestrate = () => {
+    if (!metadata.active) return;
+    target.click();
+    metadata.clicks++;
+    metadata.timer = setTimeout(orchestrate, interval);
+  };
+
+  orchestrate();
+  ClickBuffer.set(target, metadata);
+  return { target, metadata };
+};
+
+const terminateClickStream = (target) => {
+  const data = ClickBuffer.get(target);
+  if (data) {
+    data.active = false;
+    clearTimeout(data.timer);
+    ClickBuffer.delete(target);
   }
 };
 
-function spawnTrigger(element, interval, jitter) {
-  let next = Date.now() + interval;
-  
-  const cycle = () => {
-    const now = Date.now();
-    if (now >= next) {
-      try {
-        element.dispatchEvent(new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          view: window
-        }));
-        ClickBuffer.push(now - next + interval);
-      } catch (e) {
-        console.error('Trigger failure:', e);
-      }
-      next = now + interval + (Math.random() * jitter);
-    }
-    requestAnimationFrame(cycle);
-  };
-  
-  return requestAnimationFrame(cycle);
-}
+const getClickStats = (target) => ClickBuffer.get(target) || { clicks: 0 };
 
-export { ClickBuffer, spawnTrigger };
+export { initializeClickStream, terminateClickStream, getClickStats };
