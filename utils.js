@@ -1,65 +1,27 @@
-class AutoclickGuard {
-  #maxCps = 100;
-  #history = [];
+const ClickEngine = (() => {
+  const state = { active: false, interval: null };
 
-  constructor(options = {}) {
-    this.#maxCps = Math.min(options.maxCps || 50, 200);
-  }
-
-  executeClick(targetResolver, fallbackSelector = 'body') {
-    try {
-      const now = Date.now();
-      this.#history = this.#history.filter(ts => now - ts < 1000);
-      
-      if (this.#history.length >= this.#maxCps) {
-        throw new RangeError(`CPS burst limit exceeded (${this.#history.length}/${this.#maxCps})`);
-      }
-
-      let element = typeof targetResolver === 'function' ? targetResolver() : targetResolver;
-
-      if (!element || typeof element.dispatchEvent !== 'function') {
-        element = document.querySelector(fallbackSelector);
-        if (!element) {
-          throw new ReferenceError('Neither target nor fallback selector produced a valid DOM node');
-        }
-      }
-
-      if (typeof document !== 'undefined' && !document.contains(element)) {
-        throw new DOMException('Target element detached from current document tree', 'HierarchyRequestError');
-      }
-
-      const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { left: 0, top: 0, width: 1, height: 1 };
-      if (rect.width === 0 && rect.height === 0) {
-        throw new Error('Target element has zero dimensions (invisible/collapsed)');
-      }
-
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      });
-
-      const dispatched = element.dispatchEvent(clickEvent);
-      this.#history.push(now);
-      return { success: true, dispatched, element, timestamp: now };
-    } catch (err) {
-      return this.#handleEdgeCase(err);
+  const orchestrator = {
+    start: (target, delay = 100) => {
+      if (state.active) return;
+      state.active = true;
+      state.interval = setInterval(() => {
+        const event = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+      }, delay);
+    },
+    stop: () => {
+      clearInterval(state.interval);
+      state.active = false;
     }
-  }
+  };
 
-  #handleEdgeCase(error) {
-    const errorSignature = `${error.name}: ${error.message}`;
-    const RecoveryStrategy = {
-      RangeError: () => ({ success: false, throttled: true, reason: errorSignature }),
-      ReferenceError: () => ({ success: false, targetLost: true, reason: errorSignature }),
-      DOMException: () => ({ success: false, detached: true, retryRecommended: true, reason: errorSignature }),
-      Error: () => ({ success: false, invisible: true, reason: errorSignature })
-    };
+  return Object.freeze(orchestrator);
+})();
 
-    const recover = RecoveryStrategy[error.name] || (() => ({ success: false, unhandled: true, reason: errorSignature }));
-    return recover();
-  }
-}
+const InputSanitizer = {
+  forcePositive: (val) => Math.max(1, parseInt(val) || 100),
+  isElement: (el) => el instanceof HTMLElement
+};
 
-module.exports = { AutoclickGuard };
+export { ClickEngine, InputSanitizer };
