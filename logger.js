@@ -1,37 +1,33 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const LOG_FILE = path.join(__dirname, 'click_history.jsonl');
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_SIZE = 1024 * 1024 * 5;
 
-const Logger = {
-  entries: [],
-  writeQueue: async (data) => {
-    const entry = JSON.stringify({
-      ts: Date.now(),
-      ...data,
-      meta: 'tediousservi-trace'
-    }) + '\n';
-    
-    try {
-      fs.appendFileSync(LOG_FILE, entry);
-      Logger.entries.push(data);
-      if (Logger.entries.length > 50) Logger.entries.shift();
-    } catch (e) {
-      process.stderr.write(`[CRITICAL] logging failure: ${e.message}\n`);
-    }
-  },
-  flush: () => {
-    const snapshot = [...Logger.entries];
-    Logger.entries = [];
-    return snapshot;
-  },
-  formatStats: () => {
-    const total = Logger.entries.length;
-    const avg = total > 0 
-      ? Logger.entries.reduce((a, b) => a + (b.delay || 0), 0) / total 
-      : 0;
-    return { count: total, avgDelay: avg.toFixed(2) };
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const getLogPath = () => path.join(LOG_DIR, 'tedious.log');
+
+const rotate = () => {
+  const p = getLogPath();
+  if (fs.existsSync(p) && fs.statSync(p).size > MAX_SIZE) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.renameSync(p, path.join(LOG_DIR, `tedious-${timestamp}.log`));
   }
 };
 
-module.exports = Logger;
+const logger = {
+  info: (msg) => {
+    rotate();
+    const entry = `[${new Date().toISOString()}] INFO: ${msg}${os.EOL}`;
+    fs.appendFileSync(getLogPath(), entry);
+  },
+  error: (err) => {
+    rotate();
+    const entry = `[${new Date().toISOString()}] ERROR: ${err.stack || err}${os.EOL}`;
+    fs.appendFileSync(getLogPath(), entry);
+  }
+};
+
+module.exports = logger;
