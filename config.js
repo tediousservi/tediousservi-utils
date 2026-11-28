@@ -1,61 +1,64 @@
-const DEFAULTS = Object.freeze({
+const DEFAULT_CONFIG = Object.freeze({
   cps: 10,
-  jitterMs: 15,
-  button: 'left',
-  toggleHotkey: 'F6',
-  burstMode: false,
-  burstCount: 3,
-  targetWindow: null
+  jitter: 0.15,
+  targetSelector: '#click-target',
+  mode: 'burst',
+  maxClicks: 1000,
+  safetyPauseMs: 5000,
+  keys: { trigger: 'Space', stop: 'Escape' }
 });
 
-const SANITIZERS = {
-  cps: (v) => Math.min(Math.max(Number(v) || 10, 1), 500),
-  jitterMs: (v) => Math.max(Number(v) || 0, 0),
-  button: (v) => ['left', 'right', 'middle'].includes(v) ? v : 'left',
-  burstCount: (v) => Math.max(parseInt(v, 10) || 1, 1),
-  burstMode: (v) => Boolean(v)
-};
-
 class ConfigLoader {
-  constructor(customConfig = {}) {
-    this._raw = customConfig;
-    this._store = this._hydrate(customConfig);
-    return new Proxy(this, {
+  constructor(customOverrides = {}) {
+    this.raw = this.#deepMerge(DEFAULT_CONFIG, customOverrides);
+    return this.#createProxy(this.raw);
+  }
+
+  #deepMerge(target, source) {
+    const result = { ...target };
+    for (const [key, value] of Object.entries(source)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        result[key] = this.#deepMerge(target[key] || {}, value);
+      } else if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  #createProxy(obj) {
+    return new Proxy(obj, {
       get: (target, prop) => {
-        if (prop in target) return target[prop];
-        return target.get(prop);
+        if (prop === 'getValidatedInterval') {
+          return () => Math.max(1, 1000 / (target.cps || 10));
+        }
+        if (prop === 'withJitter') {
+          return (baseMs) => {
+            const dev = baseMs * (target.jitter || 0);
+            return baseMs + (Math.random() * dev * 2 - dev);
+          };
+        }
+        const val = target[prop];
+        return typeof val === 'object' && val !== null ? this.#createProxy(val) : val;
+      },
+      set: (target, prop, value) => {
+        if (prop === 'cps' && (typeof value !== 'number' || value <= 0)) {
+          throw new RangeError('CPS must be a positive number');
+        }
+        target[prop] = value;
+        return true;
       }
     });
   }
 
-  _hydrate(source) {
-    const merged = Object.create(DEFAULTS);
-    for (const [key, value] of Object.entries(source)) {
-      if (value !== undefined) {
-        const cleanFn = SANITIZERS[key] || ((x) => x);
-        merged[key] = cleanFn(value);
-      }
+  static loadFromEnv(envPrefix = 'AUTOCLICK_') {
+    const overrides = {};
+    if (typeof process !== 'undefined' && process && process.env) {
+      if (process.env[`${envPrefix}CPS`]) overrides.cps = Number(process.env[`${envPrefix}CPS`]);
+      if (process.env[`${envPrefix}MODE`]) overrides.mode = process.env[`${envPrefix}MODE`];
     }
-    return merged;
-  }
-
-  get(key) {
-    return this._store[key] ?? DEFAULTS[key];
-  }
-
-  merge(newPartial) {
-    this._raw = { ...this._raw, ...newPartial };
-    this._store = this._hydrate(this._raw);
-    return this;
-  }
-
-  export() {
-    const result = {};
-    for (const key of Object.keys(DEFAULTS)) {
-      result[key] = this.get(key);
-    }
-    return result;
+    return new ConfigLoader(overrides);
   }
 }
 
-module.exports = { ConfigLoader, DEFAULTS };
+module.exports = { ConfigLoader, DEFAULT_CONFIG };
